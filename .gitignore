@@ -1,0 +1,25 @@
+# Android and Gradle
+.gradle/
+**/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio / IntelliJ machine state
+.idea/
+*.iml
+
+# Signing and secrets
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+*.properties.local
+.env
+.env.*
+
+# Operating systems
+.DS_Store
+Thumbs.db
+desktop.ini
