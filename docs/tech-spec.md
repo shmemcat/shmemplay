@@ -306,21 +306,25 @@ an explicit privacy/performance decision.
 
 ### 10.1 `m3u-parser-v1`
 
-The parser accepts a stream; discovery handles extensions. `displayName` is
+The parser accepts a caller-owned stream and leaves it open; discovery handles
+extensions. `displayName` is
 nonblank and `backingName` may be null. Desktop v1 uses throwing UTF-8 with BOM
 detection, so recognized UTF-16/32 BOM input may be accepted. This **Corrects**
 the original claim that established behavior is strictly UTF-8 plus optional
 UTF-8 BOM. Android must fixture exact v1 compatibility or name a new
 strict-UTF-8 contract.
 
-Line parsing accepts LF/CRLF, numbers physical lines from 1, trims before
+Line parsing accepts CR, LF, and CRLF plus an unterminated final line, numbers physical lines from 1, trims before
 classification and retained source value, ignores blank and ordinary comments,
 recognizes `#EXTINF:` case-insensitively, parses signed decimal duration before
-the first comma (invalid/overflow becomes null), retains post-comma title
-without another trim, carries EXTINF across blanks/comments, applies last
+the first comma (invalid/overflow becomes null), retains a nonempty post-comma
+title without another trim (`null` for no comma or terminal comma), carries
+EXTINF across blanks/comments, applies last
 EXTINF, attaches it to the next path, and discards dangling metadata. It
 preserves path order, duplicates, physical line, trimmed source path, normalized
-path, and optional metadata. A `#`-starting path is not representable in v1.
+path, and optional metadata. With `preserveExtendedInfo=false`, EXTINF is
+consumed but omitted from records. A `#`-starting path is not representable in v1.
+Any production path that normalizes empty is a typed parser error.
 The retained path is not byte-raw. Malformed encoding, provider failure,
 required-name failure, limits, and cancellation are structured per-playlist
 errors and never abort unrelated scans.
@@ -359,19 +363,20 @@ one normalized optional prefix using case-insensitive existing-prefix
 detection; and emits only paths, dropping comments, blanks, `#EXTM3U`, and
 EXTINF.
 
-**Unresolved Phase 2 gate — canonical versus source-preserving editing:** Phase
-1 intentionally does not choose between:
+**Resolved in Phase 2 — canonical deterministic editing.** Mutation is eligible
+only for `canonical-gonemad-profile-v1`: valid UTF-8 without BOM, LF-only,
+trailing LF when nonempty, and path-only nonblank records. Every path must
+already be a canonical absolute primary path below `/storage/emulated/0/`.
+Deterministic `m3u-writer-v1` output for the parsed path sequence must equal the
+input bytes exactly. A zero-byte empty playlist is canonical and writable.
 
-- canonical rewrite using deterministic writer behavior, knowingly dropping
-  metadata/comments and canonicalizing unrelated records; or
-- source-record-preserving edit that changes only target path/associated EXTINF
-  records while preserving unrelated bytes/records where encoding allows.
-
-This remains unresolved because “no silent canonicalization of unrelated
-entries” conflicts with the current deterministic writer. Phase 2 must select,
-version, fixture, and document byte-level versus semantic guarantees before any
-write implementation. No repository behavior, scaffold code, or test may imply
-a default.
+Parseable noncanonical playlists remain readable for membership inspection, but
+mutation eligibility returns typed reasons (encoding/BOM, line endings,
+trailing LF, blank/non-path records, noncanonical path, or writer mismatch).
+This avoids silently canonicalizing unrelated records. The selected output plan
+always emits canonical absolute primary paths. Removable-volume output is not
+representable by this profile and remains mutation-ineligible pending a
+separately versioned, fixture-backed profile.
 
 Regardless of the choice: never write unaffected documents; preserve unrelated
 entry order and duplicate multiplicity; reject line-break injection; choose an
@@ -380,6 +385,16 @@ define absolute primary, volume-relative, music-root-relative, mixed/tie/
 single/empty behavior, ignore comments/EXTINF, require a configured ambiguous
 default, record the generated path before confirmation, and verify internal and
 removable storage separately.
+
+### 11.1 Phase 2 implementation boundary
+
+The Java 17 `:domain` module contains only Kotlin/JDK code. It implements the
+versioned parser, path normalization and explicit volume-aware comparison,
+checksum, writer, profile validator, canonical output plan, occurrence indexes,
+add-one-if-absent, and remove-all transforms. Root `contract-fixtures` manifests
+and exact bytes are loaded as `:domain` test resources. The Android app has a
+compile dependency on this module but does not invoke storage or mutation.
+`PhaseOneSafety` remains mutation-disabled.
 
 ## 12. Membership, add, and remove
 

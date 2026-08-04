@@ -5,8 +5,9 @@ will let a user share the playing file, inspect membership across M3U/M3U8
 playlists, and safely add or remove the track from several playlists. GoneMAD
 remains the music player.
 
-> **Safety status:** Phase 1 is scaffold-only. This app does not request
-> playlist access and cannot modify playlists.
+> **Safety status:** Phase 2 adds and tests platform-neutral domain contracts.
+> The Android app still does not request playlist access and cannot modify
+> playlists; `PhaseOneSafety` remains enforced.
 
 ## Requirements
 
@@ -36,6 +37,7 @@ From PowerShell:
 .\gradlew.bat assembleDebug
 .\gradlew.bat lintDebug
 .\gradlew.bat testDebugUnitTest
+.\gradlew.bat :domain:test
 .\gradlew.bat connectedDebugAndroidTest
 ```
 
@@ -45,17 +47,21 @@ an emulator or device and is not run by hosted CI.
 ## Repository guide
 
 - `app/`: Kotlin, Compose, and Android tests.
-- `contract-fixtures/`: shared Kotlin/C# contract categories; populated in
-  Phase 2 after explicit contract decisions.
+- `domain/`: pure Kotlin/JVM Java 17 contracts, transforms, and fixture tests.
+- `contract-fixtures/`: shared, versioned Kotlin/C# manifests and exact bytes.
 - `docs/tech-spec.md`: authoritative implementation and product specification.
 - `.github/workflows/android.yml`: Linux compile, lint, and JVM test checks.
 
 ## Current phase
 
-Phase 1 initializes the repository, permanent application identity
-`io.github.shmemcat.shmemplaylist`, launcher scaffold, CI, fixture layout, and
-the authoritative specification. No production intake, MediaStore, SAF, Room,
-playlist parsing, or mutation behavior is implemented yet.
+Phase 2 resolves editing as canonical deterministic editing and implements the
+pure domain behavior for parsing, paths, volume-aware comparison, semantic
+checksums, deterministic writing, canonical eligibility, membership, add, and
+remove. Canonical writable playlists are zero-byte empty files or exact
+UTF-8-without-BOM, LF-only writer output containing absolute primary-storage
+paths. Parseable noncanonical files remain readable but expose typed mutation
+ineligibility reasons. No production intake, MediaStore, SAF, Room, or real
+playlist mutation behavior is implemented yet.
 
 See [the technical specification](docs/tech-spec.md) for safety gates and the
 complete delivery sequence.

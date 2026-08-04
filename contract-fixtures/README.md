@@ -1,8 +1,9 @@
 # Cross-repository contract fixtures
 
-This directory will hold versioned, platform-neutral fixtures consumed by both
-Shmemplaylist (Kotlin) and Shmembee (C#). Phase 1 establishes categories only;
-it intentionally makes no assertions before the contract decisions in Phase 2.
+This directory holds versioned, platform-neutral fixtures consumed by both
+Shmemplaylist (Kotlin) and Shmembee (C#). `manifest.json` is the fixture-set
+index. Category manifests reference exact byte files; paths are relative to
+this directory so consumers do not depend on the host filesystem layout.
 
 - `parser/`: encoded M3U inputs and expected source records.
 - `normalization/`: path normalization and comparison cases.
@@ -11,5 +12,6 @@ it intentionally makes no assertions before the contract decisions in Phase 2.
 - `operations/`: add, remove, stale-state, rollback, recovery, and undo cases.
 - `gonemad/`: redacted, reproducible GoneMAD-generated and rewritten examples.
 
-Each populated category will include a manifest naming the contract version,
-exact input bytes or encoding, expected output or error, and rationale.
+Phase 2 fixtures cover `m3u-parser-v1`, `phone-path-v1`,
+`semantic-checksum-v1`, `m3u-writer-v1`,
+`canonical-gonemad-profile-v1`, and `playlist-operations-v1`.
