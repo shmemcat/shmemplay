@@ -5,11 +5,12 @@ will let a user share the playing file, inspect membership across M3U/M3U8
 playlists, and safely add or remove the track from several playlists. GoneMAD
 remains the music player.
 
-> **Safety status:** Phase 5 adds user-selected, persisted playlist-tree access,
-> a confirmed disposable provider test, and read-only membership scanning.
-> Phase 6 work permits verified transactions only against the app-created,
-> identity-persisted `Shmemplaylist Companion Test.m3u`. Real playlists cannot
-> be modified.
+> **Safety status:** Phase 7 enables real multi-playlist writes only after the
+> user deliberately enables them and the app verifies the safety prerequisites
+> for that operation. The unchecked Phase 6 physical-device matrix is retained
+> as regression guidance, not as a blanket prerequisite that prevents a user
+> from choosing to enable real writes. Unknown state or required recovery still
+> blocks all mutation.
 
 ## Requirements
 
@@ -56,25 +57,42 @@ an emulator or device and is not run by hosted CI.
 
 ## Current phase
 
-Phase 6 is implemented as a disposable-playlist transaction proof and awaits
-physical-device fault-injection and GoneMAD refresh validation. Phase 5
-continues to provide persisted SAF access and automatic read-only membership
-scanning.
+Phase 7 moves the implemented transaction machinery toward user-enabled real
+multi-playlist Add and Remove operations. Before enabling writes, the app must
+have a persisted writable SAF grant, a successful disposable provider
+capability test, exact track resolution, eligible canonical targets, sufficient
+backup capacity, no active operation, and no pending recovery. Enabling real
+writes is an explicit user choice with a clear warning; every operation still
+requires confirmation, and material changes found by the mandatory pre-write
+reread require reconfirmation.
+
+Phase 5 continues to provide persisted SAF access and automatic read-only
+membership scanning. Phase 6 established the disposable-playlist transaction
+model; its device-proof checklist remains historical and useful as a regression
+and fault-injection matrix.
 The user can select the GoneMAD playlist directory, persist and revalidate its
 SAF grant, discover direct-child M3U/M3U8 documents, and explicitly authorize a
 disposable create/write/reread/rename/update/delete/cleanup capability test.
-After exact track resolution, the app scans playlists read-only and shows Add
-and Remove views, membership and duplicate counts, search, relevant/all
-filtering, containing-first ordering, selection controls, warnings, and
-progress. Add/Remove actions remain unequivocally disabled.
+After exact track resolution, the app scans playlists and shows Add and Remove
+views, membership and duplicate counts, search, relevant/all filtering,
+containing-first ordering, selection controls, warnings, and progress. Real
+actions remain disabled until the user enables them and all operation-time
+safety gates pass.
 
-Android 16 device testing must confirm provider capabilities, persisted access
-after process recreation, membership against real GoneMAD playlists, duplicate
-counts, and rotation behavior. Phase 6 device testing must additionally prove
-journaling, exact-byte backups, reread/parse/semantic verification, rollback,
-startup recovery, concurrency-safe undo, and GoneMAD refresh behavior. No
-playlist may be changed except disposable capability-test documents and the
-identity-persisted companion test playlist.
+Android 16 device testing should continue to exercise provider capabilities,
+persisted access after process recreation, membership, duplicate counts,
+rotation, journaling, exact-byte backups, reread/parse/semantic verification,
+rollback, startup recovery, concurrency-safe undo, and GoneMAD refresh behavior.
+For Phase 7, results are reported per target as changed, skipped, failed,
+restored, or recovery-required. Rollback/recovery status and eligible Undo stay
+visible; optional auto-return to GoneMAD occurs only after an uncomplicated
+success. The primary screen keeps only essential actions visible and places
+infrequent settings, diagnostics, and history in a minimal overflow menu.
+
+See [the Phase 7 device proof](docs/phase-7-device-proof.md) for rollout,
+reconciliation, and evidence requirements. The
+[Phase 6 device proof](docs/phase-6-device-proof.md) is preserved unchanged as
+historical/regression guidance.
 
 See [the technical specification](docs/tech-spec.md) for safety gates and the
 complete delivery sequence.

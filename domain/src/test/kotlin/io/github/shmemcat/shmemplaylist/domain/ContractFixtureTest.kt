@@ -166,6 +166,58 @@ class ContractFixtureTest {
     }
 
     @Test
+    fun `Phase 7 batch operation fixtures preserve plans and rollback order`() {
+        val root = loader.json("operations/playlist-operations-v1.json")
+        root["phase7BatchCases"]!!.jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val action = case.string("action")
+            val policy = PathCasePolicy.valueOf(case.string("policy"))
+            val target = VolumePath(
+                VolumeId(case.string("targetVolume")),
+                case.string("target"),
+            )
+            val changedIds = mutableListOf<String>()
+            var hasMaterialReread = false
+
+            case["targets"]!!.jsonArray.forEach { targetElement ->
+                val fixtureTarget = targetElement.jsonObject
+                val volume = VolumeId(fixtureTarget.string("volume"))
+                val original = fixtureTarget.stringList("paths").map { path ->
+                    VolumePath(volume, requireNotNull(PhonePathV1.normalize(path)))
+                }
+                val current = if ("rereadPaths" in fixtureTarget) {
+                    hasMaterialReread = true
+                    fixtureTarget.stringList("rereadPaths").map { path ->
+                        VolumePath(volume, requireNotNull(PhonePathV1.normalize(path)))
+                    }
+                } else {
+                    original
+                }
+                val planned = when (action) {
+                    "ADD" -> PlaylistOperationsV1.addOneIfAbsent(current, target, policy)
+                    "REMOVE" -> PlaylistOperationsV1.removeAll(current, target, policy)
+                    else -> error("Unsupported fixture action: $action")
+                }
+                val expected = fixtureTarget.stringList("expectedPaths").map {
+                    requireNotNull(PhonePathV1.normalize(it))
+                }
+                assertEquals(expected, planned.map(VolumePath::normalizedPath))
+
+                if (fixtureTarget.string("expectedOutcome") in setOf("CHANGED", "RESTORED", "FAILED")) {
+                    changedIds += fixtureTarget.string("id")
+                }
+            }
+
+            assertEquals(hasMaterialReread, case.bool("requiresReconfirmation"))
+            assertEquals(case.stringList("mutationOrder"), changedIds)
+            assertEquals(
+                case.stringList("mutationOrder").asReversed(),
+                case.stringList("rollbackOrder"),
+            )
+        }
+    }
+
+    @Test
     fun `canonical output plan produces eligible absolute primary path`() {
         val path = CanonicalAbsolutePrimaryPathPlan.generate("Music/Artist/Song.mp3")
         val output = M3uWriterV1.write(listOf(path))

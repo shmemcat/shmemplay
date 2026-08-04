@@ -7,14 +7,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.shmemcat.shmemplaylist.domain.PhonePathV1
+import io.github.shmemcat.shmemplaylist.domain.BatchAction
+import io.github.shmemcat.shmemplaylist.operations.BatchPreview
 import io.github.shmemcat.shmemplaylist.operations.CompanionAction
 import io.github.shmemcat.shmemplaylist.operations.CompanionTestOperationCoordinator
+import io.github.shmemcat.shmemplaylist.operations.MultiTargetJournalOperation
+import io.github.shmemcat.shmemplaylist.operations.MultiTargetOperationCoordinator
 import io.github.shmemcat.shmemplaylist.operations.OperationOutcome
+import io.github.shmemcat.shmemplaylist.operations.PlaylistDocumentStorageResolver
+import io.github.shmemcat.shmemplaylist.operations.RoomMultiTargetOperationJournal
 import io.github.shmemcat.shmemplaylist.operations.RoomOperationJournal
 import io.github.shmemcat.shmemplaylist.persistence.AppDatabase
 import io.github.shmemcat.shmemplaylist.storage.CompanionTestPlaylistGate
 import io.github.shmemcat.shmemplaylist.storage.CompanionTestProvisionResult
 import io.github.shmemcat.shmemplaylist.storage.ExactByteBackupRepository
+import io.github.shmemcat.shmemplaylist.storage.TreePlaylistDocumentStorageFactory
 import io.github.shmemcat.shmemplaylist.tracks.ResolvedTrackIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +39,8 @@ data class PlaylistCoreState(
     val phaseSixTestMode: Boolean = false,
     val testPlaylistReady: Boolean = false,
     val operationState: PhaseSixOperationState = PhaseSixOperationState.Disabled,
+    val phaseSeven: PhaseSevenOperationState = PhaseSevenOperationState.Idle,
+    val operationHistory: List<MultiTargetJournalOperation> = emptyList(),
     val error: String? = null,
 )
 
@@ -44,6 +53,18 @@ sealed interface PhaseSixOperationState {
     data class RecoveryRequired(val reason: String) : PhaseSixOperationState
 }
 
+sealed interface PhaseSevenOperationState {
+    data object Idle : PhaseSevenOperationState
+    data object Previewing : PhaseSevenOperationState
+    data class PreviewReady(val preview: BatchPreview) : PhaseSevenOperationState
+    data class ReconfirmationRequired(val preview: BatchPreview) : PhaseSevenOperationState
+    data class ConfirmedReady(val preview: BatchPreview) : PhaseSevenOperationState
+    data object Applying : PhaseSevenOperationState
+    data class Result(val outcome: OperationOutcome) : PhaseSevenOperationState
+    data object Recovering : PhaseSevenOperationState
+    data class RecoveryRequired(val operationId: String) : PhaseSevenOperationState
+}
+
 /**
  * Non-UI integration surface for Phase 5. No method mutates a real playlist.
  */
@@ -54,11 +75,18 @@ class PlaylistCoreViewModel(application: Application) : AndroidViewModel(applica
     private val testGate = CompanionTestPlaylistGate(application)
     private val database = AppDatabase.get(application)
     private val backups = ExactByteBackupRepository(application)
+    private val documentStorage = TreePlaylistDocumentStorageFactory(application)
     private val mutableState = mutableStateOf(PlaylistCoreState(grant = settings.revalidate()))
     private var automaticScanJob: Job? = null
     private var automaticScanKey: String? = null
     private var coordinator: CompanionTestOperationCoordinator? = null
     private var lastSuccessfulOperationId: String? = null
+    private var confirmedPhaseSevenPreview: BatchPreview? = null
+    private val multiTargetCoordinator = MultiTargetOperationCoordinator(
+        storageResolver = PlaylistDocumentStorageResolver(::openDiscoveredStorage),
+        backups = backups,
+        journal = RoomMultiTargetOperationJournal(database),
+    )
 
     val state: State<PlaylistCoreState> = mutableState
 
@@ -182,6 +210,144 @@ class PlaylistCoreViewModel(application: Application) : AndroidViewModel(applica
                 operationState = outcome.toUiState(),
             )
             refreshChangedTestPlaylistMembership(resolvedTrack)
+        }
+    }
+
+    fun previewPlaylistBatch(
+        action: BatchAction,
+        selected: List<PlaylistDocument>,
+        resolvedTrack: ResolvedTrackIdentity,
+    ) {
+        val path = safeCandidatePath(resolvedTrack) ?: run {
+            mutableState.value = mutableState.value.copy(error = "unsafe-track-path")
+            return
+        }
+        val grant = settings.revalidate() as? PlaylistTreeGrantState.Valid ?: run {
+            mutableState.value = mutableState.value.copy(error = "playlist-tree-unavailable")
+            return
+        }
+        if (!grant.canWrite) {
+            mutableState.value = mutableState.value.copy(error = "playlist-tree-read-only")
+            return
+        }
+        mutableState.value = mutableState.value.copy(
+            busy = true,
+            phaseSeven = PhaseSevenOperationState.Previewing,
+            error = null,
+        )
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    multiTargetCoordinator.preview(
+                        action,
+                        path,
+                        selected.map { documentStorage.open(grant.treeUri, it) },
+                    )
+                }
+            }.fold(
+                onSuccess = { preview ->
+                    confirmedPhaseSevenPreview = null
+                    mutableState.value = mutableState.value.copy(
+                        busy = false,
+                        phaseSeven = PhaseSevenOperationState.PreviewReady(preview),
+                    )
+                },
+                onFailure = { fail(it) },
+            )
+        }
+    }
+
+    fun confirmPlaylistBatch(preview: BatchPreview) {
+        mutableState.value = mutableState.value.copy(busy = true, error = null)
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { multiTargetCoordinator.confirm(preview) }
+            }.fold(
+                onSuccess = { confirmation ->
+                    confirmedPhaseSevenPreview = confirmation.preview
+                    mutableState.value = mutableState.value.copy(
+                        busy = false,
+                        phaseSeven = if (confirmation.requiresReconfirmation) {
+                            PhaseSevenOperationState.ReconfirmationRequired(confirmation.preview)
+                        } else {
+                            PhaseSevenOperationState.ConfirmedReady(confirmation.preview)
+                        },
+                    )
+                },
+                onFailure = { fail(it) },
+            )
+        }
+    }
+
+    fun applyConfirmedPlaylistBatch(
+        resolvedTrack: ResolvedTrackIdentity,
+        preview: BatchPreview? = confirmedPhaseSevenPreview,
+    ) {
+        val confirmed = preview ?: run {
+            mutableState.value = mutableState.value.copy(error = "batch-not-confirmed")
+            return
+        }
+        mutableState.value = mutableState.value.copy(
+            busy = true,
+            phaseSeven = PhaseSevenOperationState.Applying,
+            error = null,
+        )
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                multiTargetCoordinator.apply(
+                    confirmed,
+                    resolvedTrack.candidate.identity.let {
+                        "${it.volumeName.hashCode().toUInt().toString(16)}:${it.mediaId}"
+                    },
+                    resolvedTrack.tier.name,
+                )
+            }
+            confirmedPhaseSevenPreview = null
+            mutableState.value = mutableState.value.copy(
+                busy = false,
+                phaseSeven = PhaseSevenOperationState.Result(outcome),
+            )
+            refreshAndScanMembership(resolvedTrack, force = true)
+        }
+    }
+
+    fun undoPlaylistOperation(operationId: String, resolvedTrack: ResolvedTrackIdentity) {
+        mutableState.value = mutableState.value.copy(busy = true, error = null)
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                multiTargetCoordinator.undo(operationId)
+            }
+            mutableState.value = mutableState.value.copy(
+                busy = false,
+                phaseSeven = PhaseSevenOperationState.Result(outcome),
+            )
+            refreshAndScanMembership(resolvedTrack, force = true)
+        }
+    }
+
+    fun loadOperationHistory() {
+        viewModelScope.launch {
+            val history = withContext(Dispatchers.IO) { multiTargetCoordinator.history() }
+            mutableState.value = mutableState.value.copy(operationHistory = history)
+        }
+    }
+
+    fun recoverPlaylistOperations() {
+        mutableState.value = mutableState.value.copy(
+            busy = true,
+            phaseSeven = PhaseSevenOperationState.Recovering,
+        )
+        viewModelScope.launch {
+            val outcomes = withContext(Dispatchers.IO) { multiTargetCoordinator.recover() }
+            val blocked = outcomes.firstOrNull { it.state == io.github.shmemcat.shmemplaylist.operations.JournalState.RECOVERY_REQUIRED }
+            mutableState.value = mutableState.value.copy(
+                busy = false,
+                phaseSeven = if (blocked == null) {
+                    PhaseSevenOperationState.Idle
+                } else {
+                    PhaseSevenOperationState.RecoveryRequired(blocked.operationId)
+                },
+            )
         }
     }
 
@@ -314,6 +480,13 @@ class PlaylistCoreViewModel(application: Application) : AndroidViewModel(applica
         backups = backups,
         journal = RoomOperationJournal(database),
     )
+
+    private fun openDiscoveredStorage(documentIdentity: String) =
+        (settings.revalidate() as? PlaylistTreeGrantState.Valid)?.let { grant ->
+            mutableState.value.playlists.asSequence()
+                .map { documentStorage.open(grant.treeUri, it) }
+                .firstOrNull { it.handle.documentIdentity == documentIdentity }
+        } ?: error("playlist-document-not-discovered")
 
     private fun recover(active: CompanionTestOperationCoordinator) {
         mutableState.value = mutableState.value.copy(operationState = PhaseSixOperationState.Recovering)

@@ -423,6 +423,18 @@ outcomes materially changed; store exact original bytes privately; record prior
 existence; durably persist operation/target order/checksums/backups and pending
 state; check backup capacity where possible; and serialize app operations.
 
+Phase 7 real-playlist mutation is enabled by deliberate user choice rather than
+being blocked solely by the still-unchecked Phase 6 physical-device checklist.
+The enable control must explain that real external playlists will be changed
+and must not bypass operation-time gates. Enabling requires a persisted writable
+tree grant, a successful disposable capability test for the current
+tree/provider, no pending recovery, and a supported editor/output contract.
+Each operation additionally requires exact track identity, eligible selected
+targets, a fresh snapshot, backup availability, no concurrent operation, and an
+explicit confirmation summarizing action, track, target count, and duplicate
+semantics. A material pre-write change requires reconfirmation; an immaterial
+change or already-satisfied target may become a documented skip.
+
 During writing use one operation ID, touch only selected documents, journal
 before/after irreversible transitions, close/flush before reread, stop at first
 unrecoverable failure, retain backups through undo policy, and make cancellation
@@ -432,6 +444,13 @@ verify expected ordered semantic checksum and existence.
 On failure restore every possibly changed document in reverse order from exact
 bytes, verify at the level selected by the Phase 2 editor contract, retain
 backups, block writes if uncertain, and report each outcome.
+
+Batch completion is reported per target as changed, skipped, failed, restored,
+or recovery-required, with before/after occurrence counts and a redacted reason.
+A failure after any target may require reverse-order rollback of all possibly
+changed targets; an unverified restoration is recovery-required and blocks new
+writes. Results must not collapse a mixed batch into a single success/failure
+banner.
 
 Room eventually stores operation timestamps/action/contract versions, redacted
 track identity and approval source, ordered document identities, existence,
@@ -492,6 +511,13 @@ permission, output style, MVP-preserving duplicate/removal settings,
 auto-return, history, aliases, recovery, exports, versions, capabilities, scan,
 and verified-write state.
 
+Phase 7 keeps the membership workflow visually minimal: Add/Remove, selection,
+confirmation, progress, and results remain primary; infrequent Settings,
+History, and Diagnostics live in one overflow menu. Real-write enablement is a
+prominent safety setting, not an overflow shortcut that can accidentally
+authorize an operation. Results keep per-target details, rollback/recovery
+instructions, eligible Undo, and Return to GoneMAD available.
+
 States include setup/permission required, ready, receiving, probing, resolving,
 resolution required, scanning, membership ready, changed confirmation,
 applying, verifying, rolling back, succeeded, failed, and recovery required.
@@ -539,7 +565,9 @@ bytes or error, and rationale.
   equivalence, NFC, and absent-versus-empty.
 - Operations: add/skip, remove duplicates, preservation, stale no-op/review,
   failures at every position, mismatch/restore, process death at every journal
-  state, and all undo concurrency/document cases.
+  state, all undo concurrency/document cases, and Phase 7 batch vectors covering
+  selected target order, changed/skipped plans, material-change reconfirmation,
+  per-target outcomes, and reverse-order rollback.
 - GoneMAD: before/after rewrite equivalence, real M3U/M3U8, path styles,
   duplicates/Unicode, replacement/display/backing rename, and companion
   add/remove/rollback/undo followed by rescan/autosave.
@@ -584,16 +612,23 @@ rotation/recreation, and every supported Android version.
    not display-name matching, and keeps all other discovered playlists read-only.
    Physical Android 16 provider, process-death, failure-injection, undo, and
    GoneMAD refresh evidence remains required before this gate is complete.
-7. **Phase 7 — multi-playlist MVP:** enable real writes only after reviewed
-   gate; batch semantics, reconfirmation, outcomes, settings, diagnostics, and
-   Shmembee reconciliation.
+7. **Phase 7 — multi-playlist MVP:** enable real writes by deliberate user
+   choice before the Phase 6 physical-device checklist is fully checked, while
+   retaining all transaction-time safety prerequisites; batch semantics,
+   confirmation/reconfirmation, per-target outcomes, rollback/recovery/undo,
+   auto-return, minimal overflow UI, diagnostics, and Shmembee reconciliation.
 8. **Phase 8 — hardening/release:** scale/platform/lifecycle/security,
    retention/migrations/accessibility/performance, supported-device matrix,
    reproducible release instructions with external secrets.
 9. **Phase 9 — convenience:** evaluate deferred shortcuts, assisted discovery,
    richer editing, and multi-track operations using all existing safety gates.
 
-No later mutation phase starts while an earlier safety gate is unresolved.
+An unchecked manual proof item is not by itself a mutation blocker. Concrete
+unsafe state—missing permission/capability, unresolved identity, ineligible
+content, unavailable backup, active operation, unknown bytes, or pending
+recovery—remains a blocker. `docs/phase-6-device-proof.md` is preserved as the
+historical disposable-transaction proof and an ongoing regression matrix;
+Phase 7 records real multi-target evidence separately.
 
 ## 19. MVP acceptance criteria
 
@@ -617,9 +652,11 @@ After Phase 1 and Phase 2 contracts:
 2. prove read, exact-byte backup, write, close, reread, parse, verify, restore,
    and verify-restore on one disposable M3U through the selected SAF provider.
 
-Read-only membership follows. Real writes remain compile-time or runtime gated
-until intake, identity, contracts, refresh, verification, rollback, and recovery
-phase exits all pass.
+Read-only membership follows. Phase 7 may expose a deliberate runtime enablement
+for real writes once the operation-time prerequisites in Section 13 pass; it
+does not wait for every Phase 6 manual proof checkbox. A known failure of
+identity, permission/provider capability, eligibility, backup, verification,
+rollback, or recovery remains a hard gate.
 
 ## Appendix A. Decision register
 

@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistOperationEntity::class,
         PlaylistOperationTargetEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,7 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "shmemplaylist.db",
-                ).addMigrations(MIGRATION_1_2)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
@@ -89,6 +89,16 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_playlist_operation_target_state` " +
                         "ON `playlist_operation_target` (`state`)",
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_playlist_operation_target_operation_id_target_order` " +
+                        "ON `playlist_operation_target` (`operation_id`, `target_order`)",
                 )
             }
         }

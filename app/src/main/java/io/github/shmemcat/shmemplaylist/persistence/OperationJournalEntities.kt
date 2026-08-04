@@ -50,7 +50,11 @@ data class PlaylistOperationEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("operation_id"), Index(value = ["state"])],
+    indices = [
+        Index("operation_id"),
+        Index(value = ["state"]),
+        Index(value = ["operation_id", "target_order"], unique = true),
+    ],
 )
 data class PlaylistOperationTargetEntity(
     @androidx.room.PrimaryKey(autoGenerate = true)
@@ -118,6 +122,15 @@ interface PlaylistOperationDao {
     @Transaction
     @Query("SELECT * FROM playlist_operation WHERE operation_id = :operationId")
     suspend fun get(operationId: String): OperationWithTargets?
+
+    @Query(
+        "SELECT * FROM playlist_operation_target " +
+            "WHERE operation_id = :operationId ORDER BY target_order ASC",
+    )
+    suspend fun targets(operationId: String): List<PlaylistOperationTargetEntity>
+
+    @Query("SELECT * FROM playlist_operation ORDER BY created_at_epoch_ms DESC, operation_id DESC")
+    suspend fun historyOperations(): List<PlaylistOperationEntity>
 
     @Transaction
     @Query(

@@ -51,5 +51,117 @@
       "addVolumes": ["0123-4567", "primary"],
       "remove": ["Music/A.mp3"]
     }
+  ],
+  "phase7BatchCases": [
+    {
+      "name": "add-mixed-changed-and-skip",
+      "rationale": "A selected target that already contains the track is an explicit skip; only absent targets enter deterministic mutation order.",
+      "action": "ADD",
+      "targetVolume": "primary",
+      "target": "Music/A.mp3",
+      "policy": "INSENSITIVE",
+      "requiresReconfirmation": false,
+      "targets": [
+        {
+          "id": "morning",
+          "volume": "primary",
+          "paths": ["Music/B.mp3"],
+          "expectedOutcome": "CHANGED",
+          "expectedPaths": ["Music/B.mp3", "Music/A.mp3"]
+        },
+        {
+          "id": "favorites",
+          "volume": "primary",
+          "paths": ["music/a.mp3", "Music/C.mp3"],
+          "expectedOutcome": "SKIPPED",
+          "expectedPaths": ["music/a.mp3", "Music/C.mp3"]
+        }
+      ],
+      "mutationOrder": ["morning"],
+      "rollbackOrder": ["morning"]
+    },
+    {
+      "name": "remove-all-across-targets",
+      "rationale": "Remove-all preserves unrelated order and multiplicity independently for every selected target.",
+      "action": "REMOVE",
+      "targetVolume": "primary",
+      "target": "Music/A.mp3",
+      "policy": "INSENSITIVE",
+      "requiresReconfirmation": false,
+      "targets": [
+        {
+          "id": "road-trip",
+          "volume": "primary",
+          "paths": ["Music/A.mp3", "Music/B.mp3", "music/a.mp3"],
+          "expectedOutcome": "CHANGED",
+          "expectedPaths": ["Music/B.mp3"]
+        },
+        {
+          "id": "quiet",
+          "volume": "primary",
+          "paths": ["Music/C.mp3", "Music/A.mp3", "Music/C.mp3"],
+          "expectedOutcome": "CHANGED",
+          "expectedPaths": ["Music/C.mp3", "Music/C.mp3"]
+        }
+      ],
+      "mutationOrder": ["road-trip", "quiet"],
+      "rollbackOrder": ["quiet", "road-trip"]
+    },
+    {
+      "name": "stale-add-becomes-skip",
+      "rationale": "A concurrent Shmembee or GoneMAD addition materially changes an Add plan and requires reconfirmation before becoming a safe skip.",
+      "action": "ADD",
+      "targetVolume": "primary",
+      "target": "Music/A.mp3",
+      "policy": "INSENSITIVE",
+      "requiresReconfirmation": true,
+      "targets": [
+        {
+          "id": "desktop-sync",
+          "volume": "primary",
+          "paths": ["Music/B.mp3"],
+          "rereadPaths": ["Music/B.mp3", "/storage/emulated/0/Music/A.mp3"],
+          "expectedOutcome": "SKIPPED",
+          "expectedPaths": ["Music/B.mp3", "/storage/emulated/0/Music/A.mp3"]
+        }
+      ],
+      "mutationOrder": [],
+      "rollbackOrder": []
+    },
+    {
+      "name": "failure-rolls-back-reverse-order",
+      "rationale": "A third-target failure restores possibly changed targets in reverse deterministic order and reports each target separately.",
+      "action": "ADD",
+      "targetVolume": "primary",
+      "target": "Music/A.mp3",
+      "policy": "INSENSITIVE",
+      "requiresReconfirmation": false,
+      "failureAtTarget": "three",
+      "targets": [
+        {
+          "id": "one",
+          "volume": "primary",
+          "paths": ["Music/B.mp3"],
+          "expectedOutcome": "RESTORED",
+          "expectedPaths": ["Music/B.mp3", "Music/A.mp3"]
+        },
+        {
+          "id": "two",
+          "volume": "primary",
+          "paths": ["Music/C.mp3"],
+          "expectedOutcome": "RESTORED",
+          "expectedPaths": ["Music/C.mp3", "Music/A.mp3"]
+        },
+        {
+          "id": "three",
+          "volume": "primary",
+          "paths": ["Music/D.mp3"],
+          "expectedOutcome": "FAILED",
+          "expectedPaths": ["Music/D.mp3", "Music/A.mp3"]
+        }
+      ],
+      "mutationOrder": ["one", "two", "three"],
+      "rollbackOrder": ["three", "two", "one"]
+    }
   ]
 }
