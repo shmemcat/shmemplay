@@ -25,18 +25,25 @@ data class RedactedUriShape(
 }
 
 data class DisplayNameEvidence(
+    val value: String?,
     val extension: String?,
     val length: Int?,
 )
 
 data class MetadataEvidence(
     val durationMs: Long?,
-    val titlePresent: Boolean,
-    val artistPresent: Boolean,
-    val albumPresent: Boolean,
-    val trackNumberPresent: Boolean,
-    val discNumberPresent: Boolean,
-)
+    val title: String?,
+    val artist: String?,
+    val album: String?,
+    val trackNumber: Int?,
+    val discNumber: Int?,
+) {
+    val titlePresent: Boolean get() = title != null
+    val artistPresent: Boolean get() = artist != null
+    val albumPresent: Boolean get() = album != null
+    val trackNumberPresent: Boolean get() = trackNumber != null
+    val discNumberPresent: Boolean get() = discNumber != null
+}
 
 data class DirectMediaStoreEvidence(
     val isMediaStoreUri: Boolean,
@@ -127,6 +134,7 @@ class AndroidUriEvidenceProbe(
             }
         }.onFailure { errors += "Openable-columns query failed: ${it.safeCategory()}" }
         return DisplayNameEvidence(
+            value = name?.boundedEvidence(),
             extension = name?.substringAfterLast('.', missingDelimiterValue = "")
                 ?.takeIf(String::isNotEmpty)
                 ?.lowercase()
@@ -143,11 +151,15 @@ class AndroidUriEvidenceProbe(
                 MetadataEvidence(
                     durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull(),
-                    titlePresent = retriever.hasMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
-                    artistPresent = retriever.hasMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
-                    albumPresent = retriever.hasMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
-                    trackNumberPresent = retriever.hasMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
-                    discNumberPresent = retriever.hasMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER),
+                    title = retriever.evidenceValue(MediaMetadataRetriever.METADATA_KEY_TITLE),
+                    artist = retriever.evidenceValue(MediaMetadataRetriever.METADATA_KEY_ARTIST),
+                    album = retriever.evidenceValue(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+                    trackNumber = retriever.evidenceValue(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                        ?.substringBefore('/')
+                        ?.toIntOrNull(),
+                    discNumber = retriever.evidenceValue(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
+                        ?.substringBefore('/')
+                        ?.toIntOrNull(),
                 )
             } finally {
                 retriever.release()
@@ -213,8 +225,11 @@ private fun ParcelFileDescriptor.isSeekable(): Boolean? =
 private fun ParcelFileDescriptor.seekTo(offset: Long): Long =
     android.system.Os.lseek(fileDescriptor, offset, android.system.OsConstants.SEEK_CUR)
 
-private fun MediaMetadataRetriever.hasMetadata(key: Int): Boolean =
-    !extractMetadata(key).isNullOrBlank()
+private fun MediaMetadataRetriever.evidenceValue(key: Int): String? =
+    extractMetadata(key)?.boundedEvidence()
+
+private fun String.boundedEvidence(): String? =
+    trim().takeIf(String::isNotEmpty)?.take(512)
 
 private inline fun runProbe(
     errors: MutableList<String>,

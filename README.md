@@ -5,9 +5,10 @@ will let a user share the playing file, inspect membership across M3U/M3U8
 playlists, and safely add or remove the track from several playlists. GoneMAD
 remains the music player.
 
-> **Safety status:** Phase 3 adds read-only GoneMAD share diagnostics. The
-> Android app still does not request audio-library or playlist-tree access and
-> cannot modify playlists; `PhaseOneSafety` remains enforced.
+> **Safety status:** Phase 4 adds MediaStore identity resolution and optional
+> remembered matches. The app requests audio-library read access but still
+> does not request playlist-tree access and cannot modify playlists;
+> `PhaseOneSafety` remains enforced.
 
 ## Requirements
 
@@ -54,18 +55,18 @@ an emulator or device and is not run by hosted CI.
 
 ## Current phase
 
-Phase 3 is in device-proof validation. The app registers only for
-`ACTION_SEND` with `audio/*`, handles cold and warm deliveries, probes the
-temporary shared URI off the main thread, displays a bounded redacted report,
-and exports that report as text. It records MIME, URI shape, display-name
-shape, stream/descriptor accessibility, metadata presence and duration, and
-direct MediaStore URI evidence without retaining raw URI tokens, paths,
-filenames, tags, or share text.
+Phase 4 is in device-proof validation. Rich filename, size, duration, and tag
+evidence stays only in the active in-memory share session while diagnostics
+remain redacted. With audio permission, the app queries MediaStore across
+available volumes, resolves only a uniquely proven candidate, or requires an
+explicit user choice. A manual choice can be remembered in Room and is
+revalidated against MediaStore on reuse; remembered matches can be forgotten
+from the launcher screen.
 
-The Android 16/GoneMAD 4.1.11 payload and temporary-grant matrix must still be
-executed on a physical device before Phase 3 is complete. MediaStore library
-search and `READ_MEDIA_AUDIO` belong to Phase 4. SAF, Room, and all playlist
-mutation remain unimplemented.
+The Android 16/GoneMAD 4.1.11 permission, ambiguity, alias invalidation, rename,
+delete, and removable-volume matrix must still be executed on a physical
+device before Phase 4 is complete. SAF and every playlist mutation remain
+unimplemented.
 
 See [the technical specification](docs/tech-spec.md) for safety gates and the
 complete delivery sequence.

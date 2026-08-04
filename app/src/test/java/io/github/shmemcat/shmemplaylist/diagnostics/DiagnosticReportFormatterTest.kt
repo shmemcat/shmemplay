@@ -35,7 +35,7 @@ class DiagnosticReportFormatterTest {
         val evidence = UriEvidence(
             uriShape = RedactedUriShape("content", "provider", 3, true, false),
             resolverMimeType = "audio/mpeg",
-            displayName = DisplayNameEvidence("mp3", 22),
+            displayName = DisplayNameEvidence("Secret Title.mp3", "mp3", 22),
             sizeBytes = 123L,
             streamAccessible = true,
             descriptorAccessible = true,
