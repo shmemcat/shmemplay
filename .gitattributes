@@ -21,4 +21,4 @@ gradlew text eol=lf
 
 # Contract inputs and golden outputs are exact bytes. Never normalize their
 # line endings or encodings, even when a fixture has a text-like extension.
-contract-fixtures/** -text
+contract-fixtures/**/bytes/** -text
