@@ -11,6 +11,7 @@ import io.github.shmemcat.shmemplaylist.diagnostics.IntakeDiagnosticsViewModel
 import io.github.shmemcat.shmemplaylist.intake.DeliveryKind
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistCoreViewModel
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistTreeSettings
+import io.github.shmemcat.shmemplaylist.operations.CompanionAction
 import io.github.shmemcat.shmemplaylist.tracks.AudioPermissionPolicy
 import io.github.shmemcat.shmemplaylist.tracks.ResolutionUiState
 import io.github.shmemcat.shmemplaylist.ui.ShmemplaylistApp
@@ -39,7 +40,7 @@ class MainActivity : ComponentActivity() {
             val resolved = resolutionState as? ResolutionUiState.Resolved
             LaunchedEffect(resolved?.identity?.candidate?.identity) {
                 if (resolved != null) {
-                    playlistViewModel.refreshAndScanMembership(resolved.identity, force = true)
+                    playlistViewModel.refreshAndScanMembership(resolved.identity)
                 }
             }
             ShmemplaylistApp(
@@ -66,6 +67,31 @@ class MainActivity : ComponentActivity() {
                 onScanMembership = {
                     if (resolved != null) {
                         playlistViewModel.refreshAndScanMembership(resolved.identity, force = true)
+                    }
+                },
+                onEnablePhaseSixTestMode = playlistViewModel::enablePhaseSixTestMode,
+                onProvisionCompanionTestPlaylist = {
+                    playlistViewModel.provisionCompanionTestPlaylist(resolved?.identity)
+                },
+                onCompanionTestAdd = {
+                    if (resolved != null) {
+                        playlistViewModel.applyCompanionTestOperation(
+                            CompanionAction.ADD_ONE,
+                            resolved.identity,
+                        )
+                    }
+                },
+                onCompanionTestRemove = {
+                    if (resolved != null) {
+                        playlistViewModel.applyCompanionTestOperation(
+                            CompanionAction.REMOVE_ALL,
+                            resolved.identity,
+                        )
+                    }
+                },
+                onCompanionTestUndo = {
+                    if (resolved != null) {
+                        playlistViewModel.undoLastCompanionTestOperation(resolved.identity)
                     }
                 },
             )

@@ -12,7 +12,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -33,11 +32,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.shmemcat.shmemplaylist.playlists.MembershipScanResult
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistCoreState
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistMembership
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistTreeGrantState
+import io.github.shmemcat.shmemplaylist.playlists.PhaseSixOperationState
+import io.github.shmemcat.shmemplaylist.operations.CompanionAction
+import io.github.shmemcat.shmemplaylist.operations.OperationOutcome
 import io.github.shmemcat.shmemplaylist.tracks.ResolutionUiState
 import io.github.shmemcat.shmemplaylist.tracks.TrackCandidate
 import io.github.shmemcat.shmemplaylist.ui.theme.ShmemplaylistTheme
@@ -55,6 +58,11 @@ fun ShmemplaylistApp(
     onDiscoverPlaylists: () -> Unit = {},
     onTestProviderCapabilities: () -> Unit = {},
     onScanMembership: () -> Unit = {},
+    onEnablePhaseSixTestMode: () -> Unit = {},
+    onProvisionCompanionTestPlaylist: () -> Unit = {},
+    onCompanionTestAdd: () -> Unit = {},
+    onCompanionTestRemove: () -> Unit = {},
+    onCompanionTestUndo: () -> Unit = {},
 ) {
     ShmemplaylistTheme {
         Surface(
@@ -153,6 +161,11 @@ fun ShmemplaylistApp(
                             onDiscoverPlaylists = onDiscoverPlaylists,
                             onTestProviderCapabilities = onTestProviderCapabilities,
                             onScanMembership = onScanMembership,
+                            onEnablePhaseSixTestMode = onEnablePhaseSixTestMode,
+                            onProvisionCompanionTestPlaylist = onProvisionCompanionTestPlaylist,
+                            onCompanionTestAdd = onCompanionTestAdd,
+                            onCompanionTestRemove = onCompanionTestRemove,
+                            onCompanionTestUndo = onCompanionTestUndo,
                         )
                         DiagnosticReport(state.report.text, onExport)
                     }
@@ -257,6 +270,11 @@ private fun MembershipScreen(
     onDiscoverPlaylists: () -> Unit,
     onTestProviderCapabilities: () -> Unit,
     onScanMembership: () -> Unit,
+    onEnablePhaseSixTestMode: () -> Unit,
+    onProvisionCompanionTestPlaylist: () -> Unit,
+    onCompanionTestAdd: () -> Unit,
+    onCompanionTestRemove: () -> Unit,
+    onCompanionTestUndo: () -> Unit,
 ) {
     Text("Track resolved", style = MaterialTheme.typography.titleMedium)
     Text(state.identity.candidate.displayName, style = MaterialTheme.typography.titleLarge)
@@ -287,8 +305,125 @@ private fun MembershipScreen(
                 "This track has no safe playlist path (${result.reason}).",
                 color = MaterialTheme.colorScheme.error,
             )
-        is MembershipScanResult.Success -> MembershipList(result)
+        is MembershipScanResult.Success -> {
+            MembershipList(result)
+            PhaseSixTestPanel(
+                state = playlistState,
+                onEnable = onEnablePhaseSixTestMode,
+                onProvision = onProvisionCompanionTestPlaylist,
+                onAdd = onCompanionTestAdd,
+                onRemove = onCompanionTestRemove,
+                onUndo = onCompanionTestUndo,
+            )
+        }
         null -> Unit
+    }
+}
+
+@Composable
+private fun PhaseSixTestPanel(
+    state: PlaylistCoreState,
+    onEnable: () -> Unit,
+    onProvision: () -> Unit,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+    onUndo: () -> Unit,
+) {
+    var confirmEnable by rememberSaveable { mutableStateOf(false) }
+    var pendingAction by rememberSaveable { mutableStateOf<CompanionAction?>(null) }
+    HorizontalDivider()
+    Text("Phase 6 transaction proof", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Only the app-created Shmemplaylist Companion Test.m3u can be changed. " +
+            "Every operation is backed up, journaled, reread, and verified.",
+    )
+    if (!state.phaseSixTestMode) {
+        if (!confirmEnable) {
+            OutlinedButton(onClick = { confirmEnable = true }, enabled = !state.busy) {
+                Text("Enable disposable test mode…")
+            }
+        } else {
+            Text("Enable writes only to the identity-bound companion test playlist?")
+            Button(onClick = {
+                confirmEnable = false
+                onEnable()
+            }) { Text("Enable Phase 6 test mode") }
+            OutlinedButton(onClick = { confirmEnable = false }) { Text("Cancel") }
+        }
+        return
+    }
+    if (!state.testPlaylistReady) {
+        Button(onClick = onProvision, enabled = !state.busy) {
+            Text("Create companion test playlist")
+        }
+        Text("An existing same-name file will be refused, not adopted.")
+        return
+    }
+    when (val operation = state.operationState) {
+        PhaseSixOperationState.Disabled -> Text("Test writes are disabled.")
+        PhaseSixOperationState.Ready -> Text("Test transaction engine ready.")
+        PhaseSixOperationState.Recovering -> {
+            CircularProgressIndicator()
+            Text("Recovering an interrupted test operation…")
+        }
+        is PhaseSixOperationState.Applying -> {
+            CircularProgressIndicator()
+            Text(
+                when (operation.action) {
+                    CompanionAction.ADD_ONE -> "Backing up, adding, and verifying…"
+                    CompanionAction.REMOVE_ALL -> "Backing up, removing, and verifying…"
+                },
+            )
+        }
+        is PhaseSixOperationState.RecoveryRequired -> Text(
+            "Recovery required: ${operation.reason}. New writes are blocked.",
+            color = MaterialTheme.colorScheme.error,
+        )
+        is PhaseSixOperationState.Result -> {
+            val text = when (val outcome = operation.outcome) {
+                is OperationOutcome.Changed ->
+                    "Verified change: ${outcome.occurrencesChanged} occurrence(s)."
+                is OperationOutcome.Skipped -> "No change: ${outcome.reason}."
+                is OperationOutcome.FailedSafe -> "Operation failed safely: ${outcome.reason}."
+                is OperationOutcome.RecoveryRequired -> "Recovery required: ${outcome.reason}."
+                is OperationOutcome.UndoRefused -> "Undo refused: ${outcome.reason}."
+            }
+            Text(
+                text,
+                color = if (
+                    operation.outcome is OperationOutcome.RecoveryRequired
+                ) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
+            if (operation.outcome is OperationOutcome.Changed) {
+                OutlinedButton(onClick = onUndo, enabled = !state.busy) { Text("Undo") }
+            }
+            Text("Reopen or rescan the playlist in GoneMAD if it does not refresh immediately.")
+        }
+    }
+    if (state.operationState is PhaseSixOperationState.Ready ||
+        state.operationState is PhaseSixOperationState.Result
+    ) {
+        Button(onClick = { pendingAction = CompanionAction.ADD_ONE }, enabled = !state.busy) {
+            Text("Test add current track…")
+        }
+        OutlinedButton(
+            onClick = { pendingAction = CompanionAction.REMOVE_ALL },
+            enabled = !state.busy,
+        ) { Text("Test remove current track…") }
+    }
+    pendingAction?.let { action ->
+        Text(
+            if (action == CompanionAction.ADD_ONE) {
+                "Add one occurrence to the companion test playlist?"
+            } else {
+                "Remove all matching occurrences from the companion test playlist?"
+            },
+        )
+        Button(onClick = {
+            pendingAction = null
+            if (action == CompanionAction.ADD_ONE) onAdd() else onRemove()
+        }) { Text("Run verified test transaction") }
+        OutlinedButton(onClick = { pendingAction = null }) { Text("Cancel") }
     }
 }
 
@@ -296,11 +431,10 @@ private fun MembershipScreen(
 private fun MembershipList(result: MembershipScanResult.Success) {
     var tab by rememberSaveable { mutableStateOf(1) }
     var query by rememberSaveable { mutableStateOf("") }
-    var relevantOnly by rememberSaveable { mutableStateOf(true) }
     var selectedUris by rememberSaveable { mutableStateOf(listOf<String>()) }
     val visible = result.playlists
         .filter { it.playlist.displayName.contains(query, ignoreCase = true) }
-        .filter { !relevantOnly || if (tab == 0) !it.containsResolvedTrack else it.containsResolvedTrack }
+        .filter { tab == 0 || it.containsResolvedTrack }
         .sortedWith(
             compareByDescending<PlaylistMembership> { it.containsResolvedTrack }
                 .thenBy(String.CASE_INSENSITIVE_ORDER) { it.playlist.displayName },
@@ -323,11 +457,6 @@ private fun MembershipList(result: MembershipScanResult.Success) {
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Search playlists") },
             singleLine = true,
-        )
-        FilterChip(
-            selected = relevantOnly,
-            onClick = { relevantOnly = !relevantOnly },
-            label = { Text(if (relevantOnly) "Relevant playlists" else "All playlists") },
         )
         Text("${selectedUris.size} selected (${visible.size} visible)")
         Button(
@@ -361,8 +490,17 @@ private fun MembershipList(result: MembershipScanResult.Success) {
                         },
                     )
                     Text(
-                        text = "${membership.playlist.displayName} (x$occurrenceCount)",
+                        text = if (occurrenceCount > 0) {
+                            "${membership.playlist.displayName} (x$occurrenceCount)"
+                        } else {
+                            membership.playlist.displayName
+                        },
                         style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = if (membership.containsResolvedTrack) {
+                            FontWeight.Bold
+                        } else {
+                            FontWeight.Normal
+                        },
                         color = if (membership.containsResolvedTrack) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -391,7 +529,7 @@ private fun MembershipList(result: MembershipScanResult.Success) {
 @Composable
 private fun ReadOnlyNotice() {
     Text(
-        text = "Read-only Phase 5: real playlist writes are disabled.",
+        text = "Real playlists remain read-only. Phase 6 can write only its identity-bound test playlist.",
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodyMedium,
     )

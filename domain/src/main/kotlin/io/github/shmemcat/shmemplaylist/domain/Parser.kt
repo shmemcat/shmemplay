@@ -1,6 +1,7 @@
 package io.github.shmemcat.shmemplaylist.domain
 
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -73,16 +74,18 @@ object M3uParserV1 {
     ): ParseResult {
         if (displayName.isBlank()) return ParseResult.Failure(ParseError.MissingDisplayName)
         val bytes = try {
-            val output = ArrayList<Byte>()
+            val output = ByteArrayOutputStream(minOf(limits.maxBytes, 16 * 1024))
+            val buffer = ByteArray(8 * 1024)
             while (true) {
-                val value = input.read()
-                if (value < 0) break
-                if (output.size >= limits.maxBytes) {
+                val remaining = limits.maxBytes - output.size()
+                val count = input.read(buffer, 0, minOf(buffer.size, remaining + 1))
+                if (count < 0) break
+                if (count > remaining) {
                     return ParseResult.Failure(
                         ParseError.LimitExceeded(ParseLimit.BYTES, limits.maxBytes),
                     )
                 }
-                output += value.toByte()
+                output.write(buffer, 0, count)
             }
             output.toByteArray()
         } catch (failure: Exception) {

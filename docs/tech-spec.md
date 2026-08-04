@@ -580,6 +580,10 @@ rotation/recreation, and every supported Android version.
 6. **Phase 6 — disposable transaction:** writes restricted by identity and test
    mode to `Shmemplaylist Companion Test.m3u`; journal, backup, verification,
    rollback, recovery, undo, failure injection, and refresh proof.
+   The local implementation uses an app-created and persisted document identity,
+   not display-name matching, and keeps all other discovered playlists read-only.
+   Physical Android 16 provider, process-death, failure-injection, undo, and
+   GoneMAD refresh evidence remains required before this gate is complete.
 7. **Phase 7 — multi-playlist MVP:** enable real writes only after reviewed
    gate; batch semantics, reconfirmation, outcomes, settings, diagnostics, and
    Shmembee reconciliation.

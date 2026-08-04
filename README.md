@@ -7,7 +7,9 @@ remains the music player.
 
 > **Safety status:** Phase 5 adds user-selected, persisted playlist-tree access,
 > a confirmed disposable provider test, and read-only membership scanning.
-> Real playlists cannot be modified; `PhaseOneSafety` remains enforced.
+> Phase 6 work permits verified transactions only against the app-created,
+> identity-persisted `Shmemplaylist Companion Test.m3u`. Real playlists cannot
+> be modified.
 
 ## Requirements
 
@@ -54,7 +56,10 @@ an emulator or device and is not run by hosted CI.
 
 ## Current phase
 
-Phase 5 is implemented for local verification and awaits physical-device proof.
+Phase 6 is implemented as a disposable-playlist transaction proof and awaits
+physical-device fault-injection and GoneMAD refresh validation. Phase 5
+continues to provide persisted SAF access and automatic read-only membership
+scanning.
 The user can select the GoneMAD playlist directory, persist and revalidate its
 SAF grant, discover direct-child M3U/M3U8 documents, and explicitly authorize a
 disposable create/write/reread/rename/update/delete/cleanup capability test.
@@ -65,8 +70,11 @@ progress. Add/Remove actions remain unequivocally disabled.
 
 Android 16 device testing must confirm provider capabilities, persisted access
 after process recreation, membership against real GoneMAD playlists, duplicate
-counts, and rotation behavior. No playlist may be changed except the uniquely
-named disposable capability-test document.
+counts, and rotation behavior. Phase 6 device testing must additionally prove
+journaling, exact-byte backups, reread/parse/semantic verification, rollback,
+startup recovery, concurrency-safe undo, and GoneMAD refresh behavior. No
+playlist may be changed except disposable capability-test documents and the
+identity-persisted companion test playlist.
 
 See [the technical specification](docs/tech-spec.md) for safety gates and the
 complete delivery sequence.
