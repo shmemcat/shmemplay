@@ -491,14 +491,9 @@ private fun MembershipList(
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
             is MembershipOperationUiState.Result -> {
-                Text(operationState.message, color = MaterialTheme.colorScheme.primary)
-                if (operationState.canUndo) {
-                    OutlinedButton(onClick = operations.onUndo) { Text("Undo") }
+                if (!operationState.canUndo) {
+                    Text(operationState.message, color = MaterialTheme.colorScheme.error)
                 }
-                Text(
-                    "If GoneMAD does not refresh immediately, reopen or rescan the playlist.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
             is MembershipOperationUiState.RecoveryRequired -> {
                 Text(operationState.message, color = MaterialTheme.colorScheme.error)
