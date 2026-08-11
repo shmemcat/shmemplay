@@ -26,6 +26,8 @@ import io.github.shmemcat.shmemplaylist.ui.ShmemplaylistApp
 class MainActivity : ComponentActivity() {
     private val diagnosticsViewModel: IntakeDiagnosticsViewModel by viewModels()
     private val playlistViewModel: PlaylistCoreViewModel by viewModels()
+    /** When true, finish after an uncomplicated successful add/remove so share callers return to the music app. */
+    private var autoReturnAfterSuccessfulMutation = false
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -68,6 +70,13 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                    is PhaseSevenOperationState.Result -> {
+                        val shouldReturn =
+                            autoReturnAfterSuccessfulMutation &&
+                                phaseSeven.outcome is OperationOutcome.Changed
+                        autoReturnAfterSuccessfulMutation = false
+                        if (shouldReturn) finish()
+                    }
                     else -> Unit
                 }
             }
@@ -106,6 +115,7 @@ class MainActivity : ComponentActivity() {
                         it.uri.toString() in selectedUris
                     }
                     if (resolved != null) {
+                        autoReturnAfterSuccessfulMutation = true
                         playlistViewModel.previewPlaylistBatch(
                             action = if (operation == MembershipOperation.ADD) {
                                 BatchAction.ADD_ONE

@@ -357,7 +357,6 @@ private fun MembershipList(
     var tab by rememberSaveable { mutableStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedUris by rememberSaveable { mutableStateOf(listOf<String>()) }
-    var pendingOperation by rememberSaveable { mutableStateOf<MembershipOperation?>(null) }
     val visible = result.playlists
         .filter { it.playlist.displayName.contains(query, ignoreCase = true) }
         .filter { tab == 0 || it.containsResolvedTrack }
@@ -452,7 +451,9 @@ private fun MembershipList(
             }
             Button(
                 onClick = {
-                    pendingOperation = if (tab == 0) MembershipOperation.ADD else MembershipOperation.REMOVE
+                    val operation =
+                        if (tab == 0) MembershipOperation.ADD else MembershipOperation.REMOVE
+                    operations.onApply(operation, selectedUris.toSet())
                 },
                 enabled = operations.enabled && selectedUris.isNotEmpty() &&
                     operations.state !is MembershipOperationUiState.Running &&
@@ -500,31 +501,6 @@ private fun MembershipList(
                 Button(onClick = operations.onRecover) { Text("Recover safely") }
             }
         }
-    }
-    pendingOperation?.let { operation ->
-        AlertDialog(
-            onDismissRequest = { pendingOperation = null },
-            title = {
-                Text(if (operation == MembershipOperation.ADD) "Add track?" else "Remove track?")
-            },
-            text = {
-                Text(
-                    "${if (operation == MembershipOperation.ADD) "Add to" else "Remove from"} " +
-                        "${selectedUris.size} selected playlist(s)?",
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingOperation = null
-                        operations.onApply(operation, selectedUris.toSet())
-                    },
-                ) { Text("Confirm") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingOperation = null }) { Text("Cancel") }
-            },
-        )
     }
 }
 
