@@ -10,6 +10,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,11 +22,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -53,6 +57,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -65,13 +71,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -88,9 +98,13 @@ import io.github.shmemcat.shmemplaylist.playlists.SavedPlaylistRecipe
 import io.github.shmemcat.shmemplaylist.tracks.LibrarySearch
 import io.github.shmemcat.shmemplaylist.tracks.LibrarySelection
 import io.github.shmemcat.shmemplaylist.tracks.LibraryTrack
+import io.github.shmemcat.shmemplaylist.tracks.FastScrollIndex
+import io.github.shmemcat.shmemplaylist.tracks.FastScrollTarget
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 data class LibraryBrowserActions(
     val requestAudioPermission: () -> Unit = {},
@@ -529,9 +543,194 @@ private fun TrackList(
         EmptyMessage("No songs match this list.")
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+    val labels = remember(tracks) { tracks.map(LibraryTrack::title) }
+    FastScrollableLazyColumn(
+        listState = listState,
+        itemCount = tracks.size,
+        bucketLabels = labels,
+        liveDrag = false,
+    ) {
         items(tracks, key = LibraryTrack::stableId) { track ->
             SongRow(track, track.stableId in selected, selectionMode, onLongPress, onToggle, onPlaylist)
+        }
+    }
+}
+
+@Composable
+private fun FastScrollableLazyColumn(
+    listState: LazyListState,
+    itemCount: Int,
+    bucketLabels: List<String>?,
+    liveDrag: Boolean,
+    content: LazyListScope.() -> Unit,
+) {
+    val targets = remember(bucketLabels) {
+        bucketLabels?.let(FastScrollIndex::targets).orEmpty()
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(end = 20.dp),
+            content = content,
+        )
+        FastScrollbar(
+            listState = listState,
+            itemCount = itemCount,
+            targets = targets,
+            liveDrag = liveDrag,
+        )
+    }
+}
+
+@Composable
+private fun FastScrollbar(
+    listState: LazyListState,
+    itemCount: Int,
+    targets: List<FastScrollTarget>,
+    liveDrag: Boolean,
+) {
+    val density = LocalDensity.current
+    val scrollScope = rememberCoroutineScope()
+    var scrollJob by remember { mutableStateOf<Job?>(null) }
+    var dragging by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+    var selectedTarget by remember { mutableStateOf<FastScrollTarget?>(null) }
+    var containerHeightPx by remember { mutableIntStateOf(0) }
+    var lastLiveItem by remember { mutableIntStateOf(-1) }
+
+    val verticalPaddingPx = with(density) { 4.dp.toPx() }
+    val trackHeightPx = (containerHeightPx - verticalPaddingPx * 2f).coerceAtLeast(0f)
+    val visibleCount = listState.layoutInfo.visibleItemsInfo.size
+    val isScrollable = listState.canScrollBackward || listState.canScrollForward
+    val passiveFraction = when {
+        !listState.canScrollBackward -> 0f
+        !listState.canScrollForward -> 1f
+        else -> {
+            val maximumFirstItem = (itemCount - visibleCount).coerceAtLeast(1)
+            (listState.firstVisibleItemIndex.toFloat() / maximumFirstItem).coerceIn(0f, 1f)
+        }
+    }
+    val visibleFraction = if (itemCount > 0) visibleCount.toFloat() / itemCount else 1f
+    val minimumThumbHeightPx = with(density) { 36.dp.toPx() }
+    val thumbHeightPx = if (trackHeightPx == 0f) {
+        0f
+    } else {
+        (trackHeightPx * visibleFraction).coerceAtLeast(minimumThumbHeightPx).coerceAtMost(trackHeightPx)
+    }
+    val displayedFraction = if (dragging) dragFraction else passiveFraction
+    val thumbTopPx = displayedFraction * (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
+    val idleWidth = 3.dp
+    val activeWidth = 10.dp
+    val thumbWidth = if (dragging) activeWidth else idleWidth
+    val centerInset = 8.dp
+    val bubbleSize = 58.dp
+    val bubbleSizePx = with(density) { bubbleSize.toPx() }
+    val bubbleTopPx = (
+        verticalPaddingPx + dragFraction * trackHeightPx - bubbleSizePx / 2f
+    ).coerceIn(0f, (containerHeightPx - bubbleSizePx).coerceAtLeast(0f))
+
+    fun updateDrag(y: Float) {
+        if (trackHeightPx <= 0f) return
+        val fraction = (y / trackHeightPx).coerceIn(0f, 1f)
+        dragFraction = fraction
+        if (liveDrag) {
+            val item = (fraction * (itemCount - 1).coerceAtLeast(0)).roundToInt()
+            if (item != lastLiveItem) {
+                lastLiveItem = item
+                scrollJob?.cancel()
+                scrollJob = scrollScope.launch { listState.scrollToItem(item) }
+            }
+        } else if (targets.isNotEmpty()) {
+            val targetIndex = (fraction * targets.size).toInt().coerceAtMost(targets.lastIndex)
+            selectedTarget = targets[targetIndex]
+        }
+    }
+
+    Box(
+        Modifier.fillMaxSize().onSizeChanged { containerHeightPx = it.height },
+    ) {
+        if (isScrollable && trackHeightPx > 0f) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(28.dp)
+                    .padding(vertical = 4.dp)
+                    .pointerInput(liveDrag, itemCount, targets) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            dragging = true
+                            lastLiveItem = -1
+                            updateDrag(down.position.y)
+                            var released = false
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        released = true
+                                        break
+                                    }
+                                    change.consume()
+                                    updateDrag(change.position.y)
+                                }
+                            } finally {
+                                if (released && !liveDrag) {
+                                    selectedTarget?.let { target ->
+                                        scrollJob?.cancel()
+                                        scrollJob = scrollScope.launch { listState.scrollToItem(target.itemIndex) }
+                                    }
+                                }
+                                dragging = false
+                                selectedTarget = null
+                                lastLiveItem = -1
+                            }
+                        }
+                    },
+            ) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(x = -(centerInset - idleWidth / 2))
+                        .fillMaxHeight()
+                        .width(idleWidth)
+                        .clip(RoundedCornerShape(99.dp))
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .28f)),
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = -(centerInset - thumbWidth / 2))
+                        .offset { IntOffset(0, thumbTopPx.roundToInt()) }
+                        .width(thumbWidth)
+                        .height(with(density) { thumbHeightPx.toDp() })
+                        .clip(RoundedCornerShape(99.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+            if (dragging && !liveDrag && selectedTarget != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = -38.dp)
+                        .offset { IntOffset(0, bubbleTopPx.roundToInt()) }
+                        .size(bubbleSize),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    shadowElevation = 8.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            selectedTarget?.label.orEmpty(),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -560,7 +759,12 @@ private fun PlaylistEntries(
         EmptyMessage("No playlist entries match this search.")
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+    FastScrollableLazyColumn(
+        listState = listState,
+        itemCount = entries.size,
+        bucketLabels = null,
+        liveDrag = true,
+    ) {
         itemsIndexed(entries, key = { index, entry -> "${entry.normalizedPath}-$index" }) { _, entry ->
             val track = entry.track
             if (track == null) {
@@ -691,7 +895,13 @@ private fun GroupList(
         EmptyMessage("No groups match this search.")
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+    val labels = remember(groups) { groups.map { it.first } }
+    FastScrollableLazyColumn(
+        listState = listState,
+        itemCount = groups.size,
+        bucketLabels = labels,
+        liveDrag = false,
+    ) {
         items(groups, key = { "${kind.name}-${it.first}" }) { (name, songs) ->
             Row(
                 Modifier.fillMaxWidth().height(58.dp)
@@ -733,7 +943,12 @@ private fun PlaylistList(
         EmptyMessage("No playlists match this search.")
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+    FastScrollableLazyColumn(
+        listState = listState,
+        itemCount = playlists.size,
+        bucketLabels = null,
+        liveDrag = true,
+    ) {
         items(playlists, key = { it.document.uri.toString() }) { snapshot ->
             val songs = if (LibrarySearch.matches(snapshot.document.displayName, query)) {
                 snapshot.resolvedTracks

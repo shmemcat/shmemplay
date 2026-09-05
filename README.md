@@ -60,10 +60,13 @@ an emulator or device and is not run by hosted CI.
 
 Version 2.0 adds a launcher library browser backed by MediaStore, album artwork,
 folder filters and refresh controls, persistent normalized search, dense song
-lists, an always-dark purple palette, and alphabetical song/album/artist/genre/playlist views. Long-press
-starts global selection; Select all, Deselect all, Select in-between, and Invert
-operate on the current filtered list. Song menus and bulk Options open the
-Add/Remove membership editor.
+lists, an always-dark purple palette, and alphabetical song/album/artist/genre/playlist
+views. A thin side scrollbar expands on touch; alphabetical views preview only
+the letters and script buckets present in the filtered list before jumping on
+release, while playlist views scroll continuously during a drag. Long-press starts
+global selection; Select all, Deselect all, Select in-between, and Invert operate
+on the current filtered list. Song menus and bulk Options open the Add/Remove
+membership editor.
 
 The editor reads and writes the same playlist files selected through Android's
 Storage Access Framework. A playlist is emphasized only when it contains every
