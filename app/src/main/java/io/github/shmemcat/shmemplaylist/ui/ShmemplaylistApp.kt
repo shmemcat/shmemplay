@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.shmemcat.shmemplaylist.playlists.MembershipScanResult
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistCoreState
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistMembership
@@ -91,7 +92,7 @@ fun ShmemplaylistApp(
                                 testTag = "overflow-menu"
                             },
                         ) {
-                            Text("⋮", style = MaterialTheme.typography.titleLarge)
+                            Text("⋮", fontSize = 30.sp)
                         }
                         DropdownMenu(
                             expanded = menuExpanded,

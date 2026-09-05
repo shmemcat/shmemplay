@@ -1,9 +1,10 @@
 # Shmemplaylist
 
-Shmemplaylist is a native Android companion for GoneMAD Music Player. Its MVP
-will let a user share the playing file, inspect membership across M3U/M3U8
-playlists, and safely add or remove the track from several playlists. GoneMAD
-remains the music player.
+Shmemplaylist is a native Android music browser and M3U/M3U8 playlist editor
+for a library played in GoneMAD Music Player. Launch it to browse songs,
+albums, artists, genres, and playlists with artwork, resilient search, an
+always-dark purple theme, and Musicolet-style bulk selection. Sharing a playing file from GoneMAD still opens
+the focused membership editor. GoneMAD remains the music player.
 
 > **Safety status:** Phase 7 enables real multi-playlist writes only after the
 > user deliberately enables them and the app verifies the safety prerequisites
@@ -55,44 +56,25 @@ an emulator or device and is not run by hosted CI.
 - `docs/tech-spec.md`: authoritative implementation and product specification.
 - `.github/workflows/android.yml`: Linux compile, lint, and JVM test checks.
 
-## Current phase
+## Current implementation
 
-Phase 7 moves the implemented transaction machinery toward user-enabled real
-multi-playlist Add and Remove operations. Before enabling writes, the app must
-have a persisted writable SAF grant, a successful disposable provider
-capability test, exact track resolution, eligible canonical targets, sufficient
-backup capacity, no active operation, and no pending recovery. Enabling real
-writes is an explicit user choice with a clear warning; every operation still
-requires confirmation, and material changes found by the mandatory pre-write
-reread require reconfirmation.
+Version 2.0 adds a launcher library browser backed by MediaStore, album artwork,
+folder filters and refresh controls, persistent normalized search, dense song
+lists, an always-dark purple palette, and alphabetical song/album/artist/genre/playlist views. Long-press
+starts global selection; Select all, Deselect all, Select in-between, and Invert
+operate on the current filtered list. Song menus and bulk Options open the
+Add/Remove membership editor.
 
-Phase 5 continues to provide persisted SAF access and automatic read-only
-membership scanning. Phase 6 established the disposable-playlist transaction
-model; its device-proof checklist remains historical and useful as a regression
-and fault-injection matrix.
-The user can select the GoneMAD playlist directory, persist and revalidate its
-SAF grant, discover direct-child M3U/M3U8 documents, and explicitly authorize a
-disposable create/write/reread/rename/update/delete/cleanup capability test.
-After exact track resolution, the app scans playlists and shows Add and Remove
-views, membership and duplicate counts, search, relevant/all filtering,
-containing-first ordering, selection controls, warnings, and progress. Real
-actions remain disabled until the user enables them and all operation-time
-safety gates pass.
+The editor reads and writes the same playlist files selected through Android's
+Storage Access Framework. A playlist is emphasized only when it contains every
+selected song. Add appends only missing paths, Remove deletes every matching
+occurrence, and each target is rewritten once through the existing backup,
+reread, verification, rollback, and recovery coordinator. New playlists can be
+created from the editor. Playlist browsing also supports rename, delete, and
+static ALL/ANY membership recipes with positive or negative rules and explicit
+reruns.
 
-Android 16 device testing should continue to exercise provider capabilities,
-persisted access after process recreation, membership, duplicate counts,
-rotation, journaling, exact-byte backups, reread/parse/semantic verification,
-rollback, startup recovery, concurrency-safe undo, and GoneMAD refresh behavior.
-For Phase 7, results are reported per target as changed, skipped, failed,
-restored, or recovery-required. Rollback/recovery status and eligible Undo stay
-visible; optional auto-return to GoneMAD occurs only after an uncomplicated
-success. The primary screen keeps only essential actions visible and places
-infrequent settings, diagnostics, and history in a minimal overflow menu.
-
-See [the Phase 7 device proof](docs/phase-7-device-proof.md) for rollout,
-reconciliation, and evidence requirements. The
-[Phase 6 device proof](docs/phase-6-device-proof.md) is preserved unchanged as
-historical/regression guidance.
-
-See [the technical specification](docs/tech-spec.md) for safety gates and the
-complete delivery sequence.
+See [the 2.0 product and implementation plan](docs/shmemplaylist-2-plan.md) for
+the current interaction contract. The [technical specification](docs/tech-spec.md)
+and [Phase 7 device proof](docs/phase-7-device-proof.md) retain the original
+share-flow safety gates and physical-device verification guidance.

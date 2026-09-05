@@ -3,6 +3,7 @@ package io.github.shmemcat.shmemplaylist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Rule
@@ -18,14 +19,12 @@ class ShmemplaylistAppTest {
     }
 
     @Test
-    fun overflowContainsGlobalUtilities() {
-        composeRule.onNodeWithTag("overflow-menu").performClick()
+    fun settingsContainsLibraryAndPlaylistRefreshControls() {
+        composeRule.onNodeWithContentDescription("Settings").performClick()
 
-        composeRule.onNodeWithText("Choose playlist folder").assertIsDisplayed()
+        composeRule.onNodeWithText("Music folders").assertIsDisplayed()
+        composeRule.onNodeWithText("Refresh music library").assertIsDisplayed()
+        composeRule.onNodeWithText("Playlist folder").assertIsDisplayed()
         composeRule.onNodeWithText("Rescan playlists").assertIsDisplayed()
-        composeRule.onNodeWithText("Test provider capabilities").assertIsDisplayed()
-        composeRule.onNodeWithText("Export diagnostics").assertIsDisplayed()
-        composeRule.onNodeWithText("History").assertIsDisplayed()
-        composeRule.onNodeWithText("Settings").assertIsDisplayed()
     }
 }

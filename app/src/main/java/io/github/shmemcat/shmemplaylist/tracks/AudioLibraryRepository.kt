@@ -96,7 +96,7 @@ class MediaStoreAudioLibraryRepository(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.getExternalVolumeNames(context)
         } else {
-            setOf(MediaStore.VOLUME_EXTERNAL)
+            setOf("external")
         }
 
     private fun android.database.Cursor.toCandidate(volume: String): TrackCandidate =

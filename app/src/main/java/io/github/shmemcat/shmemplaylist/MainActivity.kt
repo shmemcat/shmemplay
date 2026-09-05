@@ -7,44 +7,89 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import io.github.shmemcat.shmemplaylist.diagnostics.IntakeDiagnosticsViewModel
 import io.github.shmemcat.shmemplaylist.domain.BatchAction
 import io.github.shmemcat.shmemplaylist.domain.BatchTargetDecision
 import io.github.shmemcat.shmemplaylist.intake.DeliveryKind
 import io.github.shmemcat.shmemplaylist.operations.OperationOutcome
 import io.github.shmemcat.shmemplaylist.playlists.PhaseSevenOperationState
+import io.github.shmemcat.shmemplaylist.playlists.LibraryBrowserViewModel
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistCoreViewModel
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistTreeGrantState
 import io.github.shmemcat.shmemplaylist.playlists.PlaylistTreeSettings
 import io.github.shmemcat.shmemplaylist.tracks.AudioPermissionPolicy
 import io.github.shmemcat.shmemplaylist.tracks.ResolutionUiState
 import io.github.shmemcat.shmemplaylist.ui.MembershipOperation
+import io.github.shmemcat.shmemplaylist.ui.LibraryBrowserActions
+import io.github.shmemcat.shmemplaylist.ui.LibraryBrowserApp
 import io.github.shmemcat.shmemplaylist.ui.MembershipOperationUiState
 import io.github.shmemcat.shmemplaylist.ui.MembershipOperationsUiModel
 import io.github.shmemcat.shmemplaylist.ui.ShmemplaylistApp
+import io.github.shmemcat.shmemplaylist.ui.theme.ShmemplaylistTheme
 
 class MainActivity : ComponentActivity() {
     private val diagnosticsViewModel: IntakeDiagnosticsViewModel by viewModels()
     private val playlistViewModel: PlaylistCoreViewModel by viewModels()
+    private val browserViewModel: LibraryBrowserViewModel by viewModels()
+    private var shareEntry by mutableStateOf(false)
+    private var firstResume = true
     /** When true, finish after an uncomplicated successful add/remove so share callers return to the music app. */
     private var autoReturnAfterSuccessfulMutation = false
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        diagnosticsViewModel.onPermissionResult(granted)
+        if (shareEntry) diagnosticsViewModel.onPermissionResult(granted)
+        else browserViewModel.refreshLibrary()
     }
     private val treeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         val uri = result.data?.data ?: return@registerForActivityResult
-        playlistViewModel.acceptTreeGrant(uri, result.data?.flags ?: 0)
-        val resolved = diagnosticsViewModel.state.value as? ResolutionUiState.Resolved
-        if (resolved != null) playlistViewModel.refreshAndScanMembership(resolved.identity, force = true)
+        if (shareEntry) {
+            playlistViewModel.acceptTreeGrant(uri, result.data?.flags ?: 0)
+            val resolved = diagnosticsViewModel.state.value as? ResolutionUiState.Resolved
+            if (resolved != null) playlistViewModel.refreshAndScanMembership(resolved.identity, force = true)
+        } else {
+            browserViewModel.acceptTreeGrant(uri, result.data?.flags ?: 0)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        shareEntry = intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE
         setContent {
+            if (!shareEntry) {
+                ShmemplaylistTheme {
+                    LibraryBrowserApp(
+                        state = browserViewModel.state.value,
+                        actions = LibraryBrowserActions(
+                            requestAudioPermission = {
+                                permissionLauncher.launch(AudioPermissionPolicy.requiredPermission())
+                            },
+                            selectPlaylistFolder = {
+                                treeLauncher.launch(PlaylistTreeSettings.pickerIntent())
+                            },
+                            refreshLibrary = browserViewModel::refreshLibrary,
+                            refreshPlaylists = browserViewModel::refreshPlaylists,
+                            setFolderIncluded = browserViewModel::setFolderIncluded,
+                            applyMembership = browserViewModel::applyMembership,
+                            confirmMutation = browserViewModel::confirmPendingMutation,
+                            createPlaylist = { name, tracks ->
+                                browserViewModel.createPlaylist(name, tracks)
+                            },
+                            createRulePlaylist = browserViewModel::createRulePlaylist,
+                            rerunRecipe = browserViewModel::rerunRecipe,
+                            renamePlaylist = browserViewModel::renamePlaylist,
+                            deletePlaylist = browserViewModel::deletePlaylist,
+                            clearMutationMessage = browserViewModel::clearMutationMessage,
+                        ),
+                    )
+                }
+                return@setContent
+            }
             val resolutionState = diagnosticsViewModel.state.value
             val resolved = resolutionState as? ResolutionUiState.Resolved
             val playlistState = playlistViewModel.state.value
@@ -185,7 +230,15 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        diagnosticsViewModel.receive(intent, DeliveryKind.WARM)
+        shareEntry = intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE
+        if (shareEntry) diagnosticsViewModel.receive(intent, DeliveryKind.WARM)
+        else browserViewModel.refreshLibrary()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (firstResume) firstResume = false
+        else if (!shareEntry) browserViewModel.refreshLibrary()
     }
 
     private fun shareRedactedDiagnostics(text: String) {

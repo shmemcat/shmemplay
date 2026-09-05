@@ -1,5 +1,10 @@
 # Shmemplaylist Phase 1 technical specification
 
+> **Historical baseline:** This document remains the safety and compatibility authority for
+> the original shared-track workflow. The implemented launcher-browser scope and newer product
+> decisions are specified in [`shmemplaylist-2-plan.md`](shmemplaylist-2-plan.md), which supersedes
+> the earlier rejection/deferral of library browsing and multi-track operations.
+
 Status: authoritative repository specification for Phase 1  
 Product target: Android 16 with GoneMAD Music Player 4.1.11  
 Application ID and namespace: `io.github.shmemcat.shmemplaylist`

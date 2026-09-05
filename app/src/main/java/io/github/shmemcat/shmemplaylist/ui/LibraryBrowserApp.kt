@@ -1,0 +1,1400 @@
+package io.github.shmemcat.shmemplaylist.ui
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.util.LruCache
+import android.util.Size
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import io.github.shmemcat.shmemplaylist.domain.BatchAction
+import io.github.shmemcat.shmemplaylist.domain.PlaylistRule
+import io.github.shmemcat.shmemplaylist.domain.RecipeMatch
+import io.github.shmemcat.shmemplaylist.playlists.BrowserMutationState
+import io.github.shmemcat.shmemplaylist.playlists.LibraryBrowserState
+import io.github.shmemcat.shmemplaylist.playlists.PlaylistDocument
+import io.github.shmemcat.shmemplaylist.playlists.PlaylistLibraryScanner
+import io.github.shmemcat.shmemplaylist.playlists.PlaylistSnapshot
+import io.github.shmemcat.shmemplaylist.playlists.PlaylistTreeGrantState
+import io.github.shmemcat.shmemplaylist.playlists.SavedPlaylistRecipe
+import io.github.shmemcat.shmemplaylist.tracks.LibrarySearch
+import io.github.shmemcat.shmemplaylist.tracks.LibrarySelection
+import io.github.shmemcat.shmemplaylist.tracks.LibraryTrack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+data class LibraryBrowserActions(
+    val requestAudioPermission: () -> Unit = {},
+    val selectPlaylistFolder: () -> Unit = {},
+    val refreshLibrary: () -> Unit = {},
+    val refreshPlaylists: () -> Unit = {},
+    val setFolderIncluded: (String, Boolean) -> Unit = { _, _ -> },
+    val applyMembership: (BatchAction, List<PlaylistDocument>, List<LibraryTrack>) -> Unit = { _, _, _ -> },
+    val confirmMutation: () -> Unit = {},
+    val createPlaylist: (String, List<LibraryTrack>) -> Unit = { _, _ -> },
+    val createRulePlaylist: (String, RecipeMatch, List<PlaylistRule>) -> Unit = { _, _, _ -> },
+    val rerunRecipe: (SavedPlaylistRecipe) -> Unit = {},
+    val renamePlaylist: (PlaylistDocument, String) -> Unit = { _, _ -> },
+    val deletePlaylist: (PlaylistDocument) -> Unit = {},
+    val clearMutationMessage: () -> Unit = {},
+)
+
+private enum class BrowserSection(val label: String, val glyph: String) {
+    SONGS("Songs", "♪"),
+    ALBUMS("Albums", "▣"),
+    ARTISTS("Artists", "♟"),
+    GENRES("Genres", "◆"),
+    PLAYLISTS("Playlists", "▤"),
+}
+
+private enum class DetailKind { ALBUM, ARTIST, GENRE, PLAYLIST }
+private data class BrowserDetail(val kind: DetailKind, val key: String)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LibraryBrowserApp(
+    state: LibraryBrowserState,
+    actions: LibraryBrowserActions,
+) {
+    var sectionName by rememberSaveable { mutableStateOf(BrowserSection.SONGS.name) }
+    var detailKind by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedIds by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var editorTrackIds by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showRules by rememberSaveable { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
+    var optionsExpanded by rememberSaveable { mutableStateOf(false) }
+    var playlistMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var renameDocumentUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteDocumentUri by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val section = BrowserSection.valueOf(sectionName)
+    val detail = detailKind?.let { kind -> detailKey?.let { BrowserDetail(DetailKind.valueOf(kind), it) } }
+    val songsScrollState = rememberLazyListState()
+    val albumsScrollState = rememberLazyListState()
+    val artistsScrollState = rememberLazyListState()
+    val genresScrollState = rememberLazyListState()
+    val playlistsScrollState = rememberLazyListState()
+    val detailScrollState = remember(detail?.kind, detail?.key) { LazyListState() }
+    val scrollScope = rememberCoroutineScope()
+    fun rootScrollState(destination: BrowserSection): LazyListState = when (destination) {
+        BrowserSection.SONGS -> songsScrollState
+        BrowserSection.ALBUMS -> albumsScrollState
+        BrowserSection.ARTISTS -> artistsScrollState
+        BrowserSection.GENRES -> genresScrollState
+        BrowserSection.PLAYLISTS -> playlistsScrollState
+    }
+    // Selection changes frequently. Keep library-wide filtering, indexing, and sorting out of that hot path.
+    val tracks = remember(state.allTracks, state.includedFolderRoots) {
+        state.allTracks.filter { it.folderRoot in state.includedFolderRoots }
+    }
+    val playlists = state.playlistScan.playlists
+    val tracksById = remember(tracks) { tracks.associateBy(LibraryTrack::stableId) }
+    val editorTracks = remember(editorTrackIds, tracksById) { editorTrackIds.mapNotNull(tracksById::get) }
+    val selectedTracks = remember(selectedIds, tracksById) { selectedIds.mapNotNull(tracksById::get) }
+    val selectedSet = remember(selectedIds) { selectedIds.toHashSet() }
+    val currentTracks = remember(tracks, playlists, section, detail, query) {
+        currentListTracks(tracks, playlists, section, detail, query)
+    }
+    val currentUnique = remember(currentTracks) { currentTracks.distinctBy(LibraryTrack::stableId) }
+    val currentTrackIds = remember(currentUnique) { currentUnique.map(LibraryTrack::stableId) }
+    val currentSelected = remember(currentTrackIds, selectedSet) { currentTrackIds.count(selectedSet::contains) }
+    val headerStats = remember(tracks, playlists, section, detail, query, currentUnique) {
+        browserStats(tracks, playlists, section, detail, query, currentUnique)
+    }
+    val openPlaylist = detail?.takeIf { it.kind == DetailKind.PLAYLIST }?.let { current ->
+        playlists.firstOrNull { it.document.uri.toString() == current.key }
+    }
+
+    LaunchedEffect(tracks) {
+        val available = tracks.mapTo(hashSetOf(), LibraryTrack::stableId)
+        selectedIds = selectedIds.filter { it in available }
+        editorTrackIds = editorTrackIds.filter { it in available }
+    }
+    LaunchedEffect(selectedIds) {
+        if (selectedIds.isEmpty()) {
+            advancedExpanded = false
+            optionsExpanded = false
+        }
+    }
+
+    BackHandler(enabled = editorTrackIds.isNotEmpty() || detail != null || selectedIds.isNotEmpty()) {
+        when {
+            editorTrackIds.isNotEmpty() -> editorTrackIds = emptyList()
+            detail != null -> {
+                detailKind = null
+                detailKey = null
+            }
+            else -> selectedIds = emptyList()
+        }
+    }
+
+    if (editorTrackIds.isNotEmpty()) {
+        MembershipEditor(
+            state = state,
+            tracks = editorTracks,
+            actions = actions,
+            onBack = { editorTrackIds = emptyList() },
+        )
+        MutationDialogs(state, actions)
+        return
+    }
+
+    Scaffold(
+        topBar = {
+            BrowserTopBar(
+                title = detailTitle(detail, state) ?: "Shmemplaylist",
+                stats = headerStats,
+                canGoBack = detail != null,
+                onBack = {
+                    detailKind = null
+                    detailKey = null
+                },
+                onSettings = { showSettings = true },
+                playlist = openPlaylist,
+                playlistMenuExpanded = playlistMenuExpanded,
+                onPlaylistMenuExpanded = { playlistMenuExpanded = it },
+                onRules = { showRules = true },
+                showRules = section == BrowserSection.PLAYLISTS && detail == null,
+                onRename = { openPlaylist?.let { renameDocumentUri = it.document.uri.toString() } },
+                onDelete = { openPlaylist?.let { deleteDocumentUri = it.document.uri.toString() } },
+                onSelectAll = {
+                    selectedIds = LibrarySelection.selectAll(
+                        selectedIds,
+                        currentTrackIds,
+                    )
+                },
+            )
+        },
+        bottomBar = {
+            Column {
+                if (selectedIds.isNotEmpty()) {
+                    SelectionBar(
+                        selectedTracks = selectedTracks,
+                        currentSelected = currentSelected,
+                        optionsExpanded = optionsExpanded,
+                        advancedExpanded = advancedExpanded,
+                        rangeAvailable = currentSelected >= 2,
+                        onOptionsExpanded = { optionsExpanded = it },
+                        onAdvancedExpanded = { advancedExpanded = it },
+                        onPlaylist = {
+                            optionsExpanded = false
+                            editorTrackIds = selectedIds
+                        },
+                        onSelectAll = {
+                            selectedIds = LibrarySelection.selectAll(
+                                selectedIds,
+                                currentTrackIds,
+                            )
+                        },
+                        onDeselectAll = {
+                            selectedIds = LibrarySelection.deselectAll(
+                                selectedIds,
+                                currentTrackIds,
+                            )
+                        },
+                        onSelectBetween = {
+                            selectedIds = LibrarySelection.selectBetween(
+                                selectedIds,
+                                currentTrackIds,
+                            )
+                        },
+                        onInvert = {
+                            selectedIds = LibrarySelection.invert(
+                                selectedIds,
+                                currentTrackIds,
+                            )
+                        },
+                        onCancel = { selectedIds = emptyList() },
+                    )
+                }
+                SearchBar(query = query, onQueryChange = { query = it }, onClear = { query = "" })
+                NavigationBar {
+                    BrowserSection.entries.forEach { destination ->
+                        NavigationBarItem(
+                            selected = section == destination,
+                            onClick = {
+                                if (section != destination) {
+                                    scrollScope.launch { rootScrollState(destination).scrollToItem(0) }
+                                }
+                                sectionName = destination.name
+                                detailKind = null
+                                detailKey = null
+                            },
+                            icon = { Text(destination.glyph, fontSize = 26.sp, fontWeight = FontWeight.Bold) },
+                            label = { Text(destination.label) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when {
+                state.permissionRequired -> PermissionRequired(actions.requestAudioPermission)
+                state.loadingLibrary && state.allTracks.isEmpty() -> Loading("Scanning music…")
+                state.error != null && state.allTracks.isEmpty() -> EmptyMessage(state.error)
+                else -> BrowserContent(
+                    state = state,
+                    tracks = tracks,
+                    currentTracks = currentUnique,
+                    rootScrollState = rootScrollState(section),
+                    detailScrollState = detailScrollState,
+                    section = section,
+                    detail = detail,
+                    query = query,
+                    selected = selectedSet,
+                    selectionMode = selectedIds.isNotEmpty(),
+                    onOpenDetail = { next ->
+                        detailKind = next.kind.name
+                        detailKey = next.key
+                    },
+                    onLongPress = { track ->
+                        if (track.stableId !in selectedSet) selectedIds = selectedIds + track.stableId
+                    },
+                    onToggle = { track ->
+                        selectedIds = if (track.stableId in selectedSet) {
+                            selectedIds - track.stableId
+                        } else {
+                            selectedIds + track.stableId
+                        }
+                    },
+                    onPlaylist = { track -> editorTrackIds = listOf(track.stableId) },
+                )
+            }
+            if (state.busy && state.allTracks.isNotEmpty()) {
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
+            }
+        }
+    }
+
+    if (showSettings) {
+        SettingsSheet(state, actions, onDismiss = { showSettings = false })
+    }
+    if (showRules) {
+        RulesSheet(state, actions, onDismiss = { showRules = false })
+    }
+    renameDocumentUri?.let { uri ->
+        val document = state.playlistScan.playlists.firstOrNull { it.document.uri.toString() == uri }?.document
+        if (document != null) NameDialog(
+            title = "Rename playlist",
+            initialName = document.displayName.substringBeforeLast('.'),
+            confirmLabel = "Rename",
+            supportingText = null,
+            onDismiss = { renameDocumentUri = null },
+            onConfirm = {
+                actions.renamePlaylist(document, it)
+                renameDocumentUri = null
+                detailKind = null
+                detailKey = null
+            },
+        ) else renameDocumentUri = null
+    }
+    deleteDocumentUri?.let { uri ->
+        val document = state.playlistScan.playlists.firstOrNull { it.document.uri.toString() == uri }?.document
+        if (document != null) AlertDialog(
+            onDismissRequest = { deleteDocumentUri = null },
+            title = { Text("Delete ${document.displayName}?") },
+            text = { Text("This deletes the playlist file. The audio files stay on your phone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    actions.deletePlaylist(document)
+                    deleteDocumentUri = null
+                    detailKind = null
+                    detailKey = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleteDocumentUri = null }) { Text("Cancel") } },
+        ) else deleteDocumentUri = null
+    }
+    MutationDialogs(state, actions)
+}
+
+@Composable
+private fun BrowserTopBar(
+    title: String,
+    stats: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+    playlist: PlaylistSnapshot?,
+    playlistMenuExpanded: Boolean,
+    onPlaylistMenuExpanded: (Boolean) -> Unit,
+    showRules: Boolean,
+    onRules: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onSelectAll: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                if (canGoBack) {
+                    TextButton(onClick = onBack) { Text("‹", fontSize = 40.sp, lineHeight = 40.sp) }
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        modifier = Modifier.semantics { testTag = "app-title" },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stats,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showRules) TextButton(onClick = onRules) { Text("+ Rules") }
+                if (playlist != null) {
+                    Box {
+                        TextButton(onClick = { onPlaylistMenuExpanded(true) }) { Text("⋮", fontSize = 30.sp) }
+                        DropdownMenu(
+                            expanded = playlistMenuExpanded,
+                            onDismissRequest = { onPlaylistMenuExpanded(false) },
+                        ) {
+                            DropdownMenuItem(text = { Text("Rename playlist") }, onClick = {
+                                onPlaylistMenuExpanded(false); onRename()
+                            })
+                            DropdownMenuItem(text = { Text("Delete playlist") }, onClick = {
+                                onPlaylistMenuExpanded(false); onDelete()
+                            })
+                            DropdownMenuItem(text = { Text("Select all") }, onClick = {
+                                onPlaylistMenuExpanded(false); onSelectAll()
+                            })
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = onSettings,
+                    modifier = Modifier.semantics { contentDescription = "Settings" },
+                ) { Text("⚙", fontSize = 30.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowserContent(
+    state: LibraryBrowserState,
+    tracks: List<LibraryTrack>,
+    currentTracks: List<LibraryTrack>,
+    rootScrollState: LazyListState,
+    detailScrollState: LazyListState,
+    section: BrowserSection,
+    detail: BrowserDetail?,
+    query: String,
+    selected: Set<String>,
+    selectionMode: Boolean,
+    onOpenDetail: (BrowserDetail) -> Unit,
+    onLongPress: (LibraryTrack) -> Unit,
+    onToggle: (LibraryTrack) -> Unit,
+    onPlaylist: (LibraryTrack) -> Unit,
+) {
+    if (detail != null) {
+        if (detail.kind == DetailKind.PLAYLIST) {
+            val snapshot = state.playlistScan.playlists.firstOrNull { it.document.uri.toString() == detail.key }
+            if (snapshot == null) EmptyMessage("Playlist no longer exists.") else PlaylistEntries(
+                snapshot = snapshot,
+                query = query,
+                listState = detailScrollState,
+                selected = selected,
+                selectionMode = selectionMode,
+                onLongPress = onLongPress,
+                onToggle = onToggle,
+                onPlaylist = onPlaylist,
+            )
+        } else {
+            TrackList(
+                tracks = currentTracks,
+                listState = detailScrollState,
+                selected = selected,
+                selectionMode = selectionMode,
+                onLongPress = onLongPress,
+                onToggle = onToggle,
+                onPlaylist = onPlaylist,
+            )
+        }
+        return
+    }
+    when (section) {
+        BrowserSection.SONGS -> TrackList(
+            tracks = currentTracks,
+            listState = rootScrollState,
+            selected = selected,
+            selectionMode = selectionMode,
+            onLongPress = onLongPress,
+            onToggle = onToggle,
+            onPlaylist = onPlaylist,
+        )
+        BrowserSection.ALBUMS -> GroupList(tracks, DetailKind.ALBUM, query, rootScrollState, onOpenDetail)
+        BrowserSection.ARTISTS -> GroupList(tracks, DetailKind.ARTIST, query, rootScrollState, onOpenDetail)
+        BrowserSection.GENRES -> GroupList(tracks, DetailKind.GENRE, query, rootScrollState, onOpenDetail)
+        BrowserSection.PLAYLISTS -> PlaylistList(state, query, rootScrollState, onOpenDetail)
+    }
+}
+
+@Composable
+private fun TrackList(
+    tracks: List<LibraryTrack>,
+    listState: LazyListState,
+    selected: Set<String>,
+    selectionMode: Boolean,
+    onLongPress: (LibraryTrack) -> Unit,
+    onToggle: (LibraryTrack) -> Unit,
+    onPlaylist: (LibraryTrack) -> Unit,
+) {
+    if (tracks.isEmpty()) {
+        EmptyMessage("No songs match this list.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+        items(tracks, key = LibraryTrack::stableId) { track ->
+            SongRow(track, track.stableId in selected, selectionMode, onLongPress, onToggle, onPlaylist)
+        }
+    }
+}
+
+@Composable
+private fun PlaylistEntries(
+    snapshot: PlaylistSnapshot,
+    query: String,
+    listState: LazyListState,
+    selected: Set<String>,
+    selectionMode: Boolean,
+    onLongPress: (LibraryTrack) -> Unit,
+    onToggle: (LibraryTrack) -> Unit,
+    onPlaylist: (LibraryTrack) -> Unit,
+) {
+    val exposeAll = LibrarySearch.matches(snapshot.document.displayName, query)
+    val entries = remember(snapshot.entries, snapshot.document.displayName, query) {
+        snapshot.entries.filter { entry ->
+            query.isBlank() || exposeAll || entry.track?.let { LibrarySearch.matches(it, query) } == true ||
+                LibrarySearch.matches(entry.normalizedPath, query)
+        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) {
+            it.track?.title ?: it.normalizedPath.substringAfterLast('/')
+        })
+    }
+    if (entries.isEmpty()) {
+        EmptyMessage("No playlist entries match this search.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+        itemsIndexed(entries, key = { index, entry -> "${entry.normalizedPath}-$index" }) { _, entry ->
+            val track = entry.track
+            if (track == null) {
+                Row(
+                    Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FallbackArtwork("?", false)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.normalizedPath.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("File not found in music library", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            } else {
+                SongRow(track, track.stableId in selected, selectionMode, onLongPress, onToggle, onPlaylist)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SongRow(
+    track: LibraryTrack,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onLongPress: (LibraryTrack) -> Unit,
+    onToggle: (LibraryTrack) -> Unit,
+    onPlaylist: (LibraryTrack) -> Unit,
+) {
+    var menu by rememberSaveable(track.stableId) { mutableStateOf(false) }
+    val background = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(background)
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggle(track) },
+                onLongClick = { onLongPress(track) },
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AlbumArtwork(track, selected)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${track.artist} · ${track.album}",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(formatDuration(track.durationMs), style = MaterialTheme.typography.bodySmall)
+        Box {
+            TextButton(onClick = { menu = true }, modifier = Modifier.width(48.dp)) { Text("⋮", fontSize = 28.sp) }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Playlist") }, onClick = {
+                    menu = false
+                    onPlaylist(track)
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumArtwork(track: LibraryTrack, selected: Boolean) {
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(null, track.stableId) {
+        value = withContext(Dispatchers.IO) { ArtworkLoader.load(context, track) }
+    }
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = checkNotNull(bitmap).asImageBitmap(),
+                contentDescription = "Album artwork for ${track.album}",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            FallbackArtwork(track.album.take(1).uppercase(), false)
+        }
+        if (selected) {
+            Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = .65f)),
+                contentAlignment = Alignment.Center,
+            ) { Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+private fun FallbackArtwork(label: String, selected: Boolean) {
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+        contentAlignment = Alignment.Center,
+    ) { Text(if (selected) "✓" else label, fontWeight = FontWeight.Bold, fontSize = 22.sp) }
+}
+
+@Composable
+private fun CategoryArtwork(kind: DetailKind) {
+    val glyph = when (kind) {
+        DetailKind.ARTIST -> BrowserSection.ARTISTS.glyph
+        DetailKind.GENRE -> BrowserSection.GENRES.glyph
+        DetailKind.PLAYLIST -> BrowserSection.PLAYLISTS.glyph
+        DetailKind.ALBUM -> BrowserSection.ALBUMS.glyph
+    }
+    FallbackArtwork(glyph, false)
+}
+
+@Composable
+private fun GroupList(
+    tracks: List<LibraryTrack>,
+    kind: DetailKind,
+    query: String,
+    listState: LazyListState,
+    onOpen: (BrowserDetail) -> Unit,
+) {
+    val groups = remember(tracks, kind, query) { visibleGroups(tracks, kind, query) }
+    if (groups.isEmpty()) {
+        EmptyMessage("No groups match this search.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+        items(groups, key = { "${kind.name}-${it.first}" }) { (name, songs) ->
+            Row(
+                Modifier.fillMaxWidth().height(58.dp)
+                    .combinedClickable(onClick = { onOpen(BrowserDetail(kind, name)) }, onLongClick = {}),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.width(10.dp))
+                if (kind == DetailKind.ALBUM) AlbumArtwork(songs.first(), false)
+                else CategoryArtwork(kind)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${songs.size} song${if (songs.size == 1) "" else "s"}", style = MaterialTheme.typography.bodySmall)
+                }
+                Text("›", fontSize = 30.sp, modifier = Modifier.padding(end = 16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistList(
+    state: LibraryBrowserState,
+    query: String,
+    listState: LazyListState,
+    onOpen: (BrowserDetail) -> Unit,
+) {
+    val playlists = remember(state.playlistScan.playlists, query) {
+        state.playlistScan.playlists.filter { snapshot ->
+            query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
+                snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
+        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.document.displayName })
+    }
+    if (state.grant is PlaylistTreeGrantState.NotConfigured) {
+        EmptyMessage("Choose your GoneMAD playlist folder in Settings.")
+        return
+    }
+    if (playlists.isEmpty()) {
+        EmptyMessage("No playlists match this search.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+        items(playlists, key = { it.document.uri.toString() }) { snapshot ->
+            val songs = if (LibrarySearch.matches(snapshot.document.displayName, query)) {
+                snapshot.resolvedTracks
+            } else {
+                snapshot.resolvedTracks.filter { LibrarySearch.matches(it, query) }
+            }
+            Row(
+                Modifier.fillMaxWidth().height(58.dp)
+                    .combinedClickable(
+                        onClick = { onOpen(BrowserDetail(DetailKind.PLAYLIST, snapshot.document.uri.toString())) },
+                        onLongClick = {},
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.width(10.dp))
+                CategoryArtwork(DetailKind.PLAYLIST)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(snapshot.document.displayName.substringBeforeLast('.'), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${songs.size} song${if (songs.size == 1) "" else "s"}" +
+                            if (snapshot.entries.any { it.track == null }) " · missing files" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Text("›", fontSize = 30.sp, modifier = Modifier.padding(end = 16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionBar(
+    selectedTracks: List<LibraryTrack>,
+    currentSelected: Int,
+    optionsExpanded: Boolean,
+    advancedExpanded: Boolean,
+    rangeAvailable: Boolean,
+    onOptionsExpanded: (Boolean) -> Unit,
+    onAdvancedExpanded: (Boolean) -> Unit,
+    onPlaylist: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDeselectAll: () -> Unit,
+    onSelectBetween: () -> Unit,
+    onInvert: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        tonalElevation = 6.dp,
+    ) {
+        Column {
+            Text(
+                "${selectedTracks.size} song${if (selectedTracks.size == 1) "" else "s"} selected · " +
+                    "${formatDuration(selectedTracks.sumOf(LibraryTrack::durationMs))} · $currentSelected in this list",
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Box {
+                    TextButton(onClick = { onOptionsExpanded(true) }) {
+                        SelectionActionLabel("⋮", "Options")
+                    }
+                    DropdownMenu(expanded = optionsExpanded, onDismissRequest = { onOptionsExpanded(false) }) {
+                        DropdownMenuItem(text = { Text("Playlist") }, onClick = onPlaylist)
+                    }
+                }
+                Box {
+                    TextButton(onClick = { onAdvancedExpanded(true) }) {
+                        SelectionActionLabel("▣", "Advanced select")
+                    }
+                    DropdownMenu(expanded = advancedExpanded, onDismissRequest = { onAdvancedExpanded(false) }) {
+                        DropdownMenuItem(text = { Text("Select all from this list") }, onClick = {
+                            onAdvancedExpanded(false); onSelectAll()
+                        })
+                        DropdownMenuItem(text = { Text("Deselect all from this list") }, onClick = {
+                            onAdvancedExpanded(false); onDeselectAll()
+                        })
+                        DropdownMenuItem(
+                            text = { Text("Select songs in-between first and last selected songs") },
+                            enabled = rangeAvailable,
+                            onClick = { onAdvancedExpanded(false); onSelectBetween() },
+                        )
+                        DropdownMenuItem(text = { Text("Invert selection") }, onClick = {
+                            onAdvancedExpanded(false); onInvert()
+                        })
+                    }
+                }
+                TextButton(onClick = onCancel) { SelectionActionLabel("⊗", "Cancel") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionActionLabel(glyph: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(glyph, fontSize = 27.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun SearchBar(query: String, onQueryChange: (String) -> Unit, onClear: () -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        placeholder = { Text("Search in this list…") },
+        leadingIcon = { Text("⌕", fontSize = 26.sp) },
+        trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = onClear) { Text("×", fontSize = 30.sp) } },
+        singleLine = true,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsSheet(
+    state: LibraryBrowserState,
+    actions: LibraryBrowserActions,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(.92f).fillMaxHeight(.86f),
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 8.dp,
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 28.dp),
+            ) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = onDismiss) { Text("×", fontSize = 30.sp) }
+                    }
+                    Text("Music folders", style = MaterialTheme.typography.titleMedium)
+                }
+                items(state.availableFolderRoots, key = { it }) { folder ->
+                    Row(
+                        Modifier.fillMaxWidth().combinedClickable(
+                            onClick = { actions.setFolderIncluded(folder, folder !in state.includedFolderRoots) },
+                            onLongClick = {},
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = folder in state.includedFolderRoots,
+                            onCheckedChange = { actions.setFolderIncluded(folder, it) },
+                        )
+                        Text("$folder/")
+                    }
+                }
+                item {
+                    OutlinedButton(onClick = actions.refreshLibrary, modifier = Modifier.fillMaxWidth()) {
+                        Text("Refresh music library")
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Text("Playlist folder", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        when (val grant = state.grant) {
+                            PlaylistTreeGrantState.NotConfigured -> "Not selected"
+                            is PlaylistTreeGrantState.Valid -> grant.treeUri.lastPathSegment ?: grant.treeUri.toString()
+                            is PlaylistTreeGrantState.Invalid -> "Access lost: ${grant.reason}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = actions.selectPlaylistFolder, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (state.grant is PlaylistTreeGrantState.NotConfigured) "Choose playlist folder" else "Change playlist folder")
+                    }
+                    OutlinedButton(onClick = actions.refreshPlaylists, modifier = Modifier.fillMaxWidth()) {
+                        Text("Rescan playlists")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MembershipEditor(
+    state: LibraryBrowserState,
+    tracks: List<LibraryTrack>,
+    actions: LibraryBrowserActions,
+    onBack: () -> Unit,
+) {
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedUris by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var showCreate by rememberSaveable { mutableStateOf(false) }
+    val trackIds = tracks.mapTo(linkedSetOf(), LibraryTrack::stableId)
+    val memberships = PlaylistLibraryScanner.memberships(state.playlistScan.playlists, trackIds)
+        .filter { query.isBlank() || LibrarySearch.matches(it.snapshot.document.displayName, query) }
+        .filter { tab == 0 || it.containsAny }
+        .sortedWith(
+            compareByDescending<io.github.shmemcat.shmemplaylist.playlists.SelectionMembership> { it.containsAll }
+                .thenByDescending { it.containsAny }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.snapshot.document.displayName },
+        )
+    Scaffold(
+        topBar = {
+            Surface(tonalElevation = 2.dp) {
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onBack) { Text("‹", fontSize = 40.sp, lineHeight = 40.sp) }
+                        Text("Playlists", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    }
+                    Text("${tracks.size} selected", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Add") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Remove") })
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                label = { Text("Search playlists") },
+                singleLine = true,
+            )
+            LazyColumn(Modifier.weight(1f)) {
+                items(memberships, key = { it.snapshot.document.uri.toString() }) { membership ->
+                    val key = membership.snapshot.document.uri.toString()
+                    Row(
+                        Modifier.fillMaxWidth().height(48.dp).combinedClickable(
+                            onClick = {
+                                selectedUris = if (key in selectedUris) selectedUris - key else selectedUris + key
+                            },
+                            onLongClick = {},
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = key in selectedUris,
+                            onCheckedChange = {
+                                selectedUris = if (it) (selectedUris + key).distinct() else selectedUris - key
+                            },
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                membership.snapshot.document.displayName,
+                                fontWeight = if (membership.containsAll) FontWeight.Bold else FontWeight.Normal,
+                                color = if (membership.containsAll) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (membership.containsAny) {
+                                Text(
+                                    "${membership.presentCount}/${membership.selectedCount} selected songs present" +
+                                        if (membership.occurrenceCount > membership.presentCount) " · ${membership.occurrenceCount} entries" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (memberships.isEmpty()) item { Text("No playlists match this view.") }
+                item {
+                    TextButton(onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("＋ Create new playlist")
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = { selectedUris = emptyList() },
+                    enabled = selectedUris.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                ) { Text("Clear") }
+                Button(
+                    onClick = {
+                        val documents = state.playlistScan.playlists.map(PlaylistSnapshot::document)
+                            .filter { it.uri.toString() in selectedUris }
+                        actions.applyMembership(
+                            if (tab == 0) BatchAction.ADD_ONE else BatchAction.REMOVE_ALL,
+                            documents,
+                            tracks,
+                        )
+                    },
+                    enabled = selectedUris.isNotEmpty() && !state.busy,
+                    modifier = Modifier.weight(1f),
+                ) { Text("${if (tab == 0) "Add to" else "Remove from"} ${selectedUris.size}") }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+    if (showCreate) NameDialog(
+        title = "Create new playlist",
+        initialName = "",
+        confirmLabel = "Create",
+        supportingText = "The new playlist will contain ${tracks.size} selected song${if (tracks.size == 1) "" else "s"}.",
+        onDismiss = { showCreate = false },
+        onConfirm = {
+            actions.createPlaylist(it, tracks)
+            showCreate = false
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RulesSheet(
+    state: LibraryBrowserState,
+    actions: LibraryBrowserActions,
+    onDismiss: () -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var matchName by rememberSaveable { mutableStateOf(RecipeMatch.ALL.name) }
+    var matchMenu by rememberSaveable { mutableStateOf(false) }
+    var rules by rememberSaveable { mutableStateOf(listOf<Pair<String, Boolean>>()) }
+    val snapshots = state.playlistScan.playlists
+    val match = RecipeMatch.valueOf(matchName)
+    val domainRules = rules.map { PlaylistRule(it.first, it.second) }
+    val membership = snapshots.associate { it.document.uri.toString() to it.resolvedTrackIds }
+    val previewIds = if (domainRules.isEmpty()) emptySet() else state.tracks.filter { track ->
+        val matches = domainRules.map { rule ->
+            val present = track.stableId in membership[rule.playlistIdentity].orEmpty()
+            if (rule.mustBePresent) present else !present
+        }
+        if (match == RecipeMatch.ALL) matches.all { it } else matches.any { it }
+    }.mapTo(linkedSetOf(), LibraryTrack::stableId)
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text("Create from rules", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            if (state.recipes.isNotEmpty()) {
+                Text("Saved recipes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))
+                state.recipes.forEach { recipe ->
+                    TextButton(onClick = { actions.rerunRecipe(recipe) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Rerun ${recipe.playlistName}")
+                    }
+                }
+                HorizontalDivider()
+            }
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Playlist name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            )
+            Box {
+                OutlinedButton(onClick = { matchMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Match ${if (match == RecipeMatch.ALL) "all" else "any"} rules")
+                }
+                DropdownMenu(expanded = matchMenu, onDismissRequest = { matchMenu = false }) {
+                    RecipeMatch.entries.forEach { option ->
+                        DropdownMenuItem(text = { Text(if (option == RecipeMatch.ALL) "All" else "Any") }, onClick = {
+                            matchName = option.name; matchMenu = false
+                        })
+                    }
+                }
+            }
+            rules.forEachIndexed { index, rule ->
+                RuleRow(
+                    rule = rule,
+                    playlists = snapshots,
+                    onChange = { changed -> rules = rules.toMutableList().also { it[index] = changed } },
+                    onRemove = { rules = rules.toMutableList().also { it.removeAt(index) } },
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    snapshots.firstOrNull()?.let { rules = rules + (it.document.uri.toString() to true) }
+                },
+                enabled = snapshots.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("＋ Add rule") }
+            Text("${previewIds.size} songs match", modifier = Modifier.padding(vertical = 10.dp))
+            Button(
+                onClick = {
+                    actions.createRulePlaylist(name, match, domainRules)
+                    onDismiss()
+                },
+                enabled = name.isNotBlank() && rules.isNotEmpty() && !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Create playlist") }
+        }
+    }
+}
+
+@Composable
+private fun RuleRow(
+    rule: Pair<String, Boolean>,
+    playlists: List<PlaylistSnapshot>,
+    onChange: (Pair<String, Boolean>) -> Unit,
+    onRemove: () -> Unit,
+) {
+    var membershipMenu by rememberSaveable { mutableStateOf(false) }
+    var playlistMenu by rememberSaveable { mutableStateOf(false) }
+    val name = playlists.firstOrNull { it.document.uri.toString() == rule.first }
+        ?.document?.displayName ?: "Missing playlist"
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            TextButton(onClick = { membershipMenu = true }) {
+                Text(if (rule.second) "is in" else "is not in")
+            }
+            DropdownMenu(expanded = membershipMenu, onDismissRequest = { membershipMenu = false }) {
+                DropdownMenuItem(text = { Text("is in") }, onClick = {
+                    onChange(rule.first to true); membershipMenu = false
+                })
+                DropdownMenuItem(text = { Text("is not in") }, onClick = {
+                    onChange(rule.first to false); membershipMenu = false
+                })
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            TextButton(onClick = { playlistMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            DropdownMenu(expanded = playlistMenu, onDismissRequest = { playlistMenu = false }) {
+                playlists.forEach { snapshot ->
+                    DropdownMenuItem(text = { Text(snapshot.document.displayName) }, onClick = {
+                        onChange(snapshot.document.uri.toString() to rule.second); playlistMenu = false
+                    })
+                }
+            }
+        }
+        TextButton(onClick = onRemove) { Text("×") }
+    }
+}
+
+@Composable
+private fun NameDialog(
+    title: String,
+    initialName: String,
+    confirmLabel: String,
+    supportingText: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var name by rememberSaveable(title, initialName) { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                supportingText?.let { Text(it); Spacer(Modifier.height(8.dp)) }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Playlist name") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text(confirmLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun MutationDialogs(state: LibraryBrowserState, actions: LibraryBrowserActions) {
+    when (val mutation = state.mutation) {
+        is BrowserMutationState.ReconfirmationRequired -> AlertDialog(
+            onDismissRequest = actions.clearMutationMessage,
+            title = { Text("Playlist changed") },
+            text = { Text("The playlist changed while it was being checked. Review and confirm the updated operation.") },
+            confirmButton = { TextButton(onClick = actions.confirmMutation) { Text("Confirm updated operation") } },
+            dismissButton = { TextButton(onClick = actions.clearMutationMessage) { Text("Cancel") } },
+        )
+        is BrowserMutationState.Result -> AlertDialog(
+            onDismissRequest = actions.clearMutationMessage,
+            title = { Text("Done") },
+            text = { Text(mutation.message) },
+            confirmButton = { TextButton(onClick = actions.clearMutationMessage) { Text("OK") } },
+        )
+        is BrowserMutationState.Error -> AlertDialog(
+            onDismissRequest = actions.clearMutationMessage,
+            title = { Text("Could not update playlist") },
+            text = { Text(mutation.message) },
+            confirmButton = { TextButton(onClick = actions.clearMutationMessage) { Text("OK") } },
+        )
+        else -> Unit
+    }
+}
+
+@Composable private fun PermissionRequired(onRequest: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("Audio access required", style = MaterialTheme.typography.titleLarge)
+        Text("Allow access so Shmemplaylist can browse music stored on this phone.")
+        Button(onClick = onRequest, modifier = Modifier.padding(top = 12.dp)) { Text("Allow audio access") }
+    }
+}
+
+@Composable private fun Loading(message: String) {
+    Column(
+        Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) { CircularProgressIndicator(); Text(message, modifier = Modifier.padding(top = 10.dp)) }
+}
+
+@Composable private fun EmptyMessage(message: String) {
+    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { Text(message) }
+}
+
+private fun currentListTracks(
+    tracks: List<LibraryTrack>,
+    playlists: List<PlaylistSnapshot>,
+    section: BrowserSection,
+    detail: BrowserDetail?,
+    query: String,
+): List<LibraryTrack> {
+    if (detail != null) {
+        return when (detail.kind) {
+            DetailKind.PLAYLIST -> playlists
+                .firstOrNull { it.document.uri.toString() == detail.key }
+                ?.let { snapshot ->
+                    val tracks = if (LibrarySearch.matches(snapshot.document.displayName, query)) {
+                        snapshot.resolvedTracks
+                    } else {
+                        snapshot.resolvedTracks.filter { LibrarySearch.matches(it, query) }
+                    }
+                    tracks.sortedWith(
+                        compareBy<LibraryTrack, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
+                            .thenBy(String.CASE_INSENSITIVE_ORDER) { it.artist },
+                    )
+                }.orEmpty()
+            else -> tracks.filter { groupValue(it, detail.kind) == detail.key }
+                .let { tracks ->
+                    if (LibrarySearch.matches(detail.key, query)) tracks
+                    else tracks.filter { LibrarySearch.matches(it, query) }
+                }
+        }
+    }
+    return when (section) {
+        BrowserSection.SONGS -> tracks.filter { LibrarySearch.matches(it, query) }
+        BrowserSection.ALBUMS -> visibleGroups(tracks, DetailKind.ALBUM, query).flatMap { it.second }
+        BrowserSection.ARTISTS -> visibleGroups(tracks, DetailKind.ARTIST, query).flatMap { it.second }
+        BrowserSection.GENRES -> visibleGroups(tracks, DetailKind.GENRE, query).flatMap { it.second }
+        BrowserSection.PLAYLISTS -> playlists.filter { snapshot ->
+            query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
+                snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
+        }.flatMap { snapshot ->
+            if (LibrarySearch.matches(snapshot.document.displayName, query)) snapshot.resolvedTracks
+            else snapshot.resolvedTracks.filter { LibrarySearch.matches(it, query) }
+        }
+    }
+}
+
+private fun visibleGroups(
+    tracks: List<LibraryTrack>,
+    kind: DetailKind,
+    query: String,
+): List<Pair<String, List<LibraryTrack>>> = tracks.groupBy { groupValue(it, kind) }
+    .mapValues { (name, songs) ->
+        if (query.isBlank() || LibrarySearch.matches(name, query)) songs
+        else songs.filter { LibrarySearch.matches(it, query) }
+    }
+    .filterValues(List<LibraryTrack>::isNotEmpty)
+    .toList()
+    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.first })
+
+private fun browserStats(
+    tracks: List<LibraryTrack>,
+    playlists: List<PlaylistSnapshot>,
+    section: BrowserSection,
+    detail: BrowserDetail?,
+    query: String,
+    currentTracks: List<LibraryTrack>,
+): String {
+    if (detail != null) return songStats(currentTracks)
+    return when (section) {
+        BrowserSection.SONGS -> songStats(currentTracks)
+        BrowserSection.ALBUMS -> countLabel(visibleGroups(tracks, DetailKind.ALBUM, query).size, "album")
+        BrowserSection.ARTISTS -> countLabel(visibleGroups(tracks, DetailKind.ARTIST, query).size, "artist")
+        BrowserSection.GENRES -> countLabel(visibleGroups(tracks, DetailKind.GENRE, query).size, "genre")
+        BrowserSection.PLAYLISTS -> countLabel(
+            playlists.count { snapshot ->
+                query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
+                    snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
+            },
+            "playlist",
+        )
+    }
+}
+
+private fun songStats(tracks: List<LibraryTrack>): String =
+    "${countLabel(tracks.size, "song")} · ${formatHours(tracks.sumOf(LibraryTrack::durationMs))}"
+
+private fun countLabel(count: Int, singular: String): String =
+    "$count $singular${if (count == 1) "" else "s"}"
+
+private fun formatHours(durationMs: Long): String {
+    val totalMinutes = durationMs.coerceAtLeast(0L) / 60_000
+    return "${totalMinutes / 60}h ${totalMinutes % 60}m"
+}
+
+private fun groupValue(track: LibraryTrack, kind: DetailKind): String = when (kind) {
+    DetailKind.ALBUM -> track.album
+    DetailKind.ARTIST -> track.artist
+    DetailKind.GENRE -> track.genre
+    DetailKind.PLAYLIST -> error("Playlist is not a track metadata group")
+}
+
+private fun detailTitle(detail: BrowserDetail?, state: LibraryBrowserState): String? = when (detail?.kind) {
+    DetailKind.PLAYLIST -> state.playlistScan.playlists
+        .firstOrNull { it.document.uri.toString() == detail.key }
+        ?.document?.displayName?.substringBeforeLast('.')
+    DetailKind.ALBUM, DetailKind.ARTIST, DetailKind.GENRE -> detail.key
+    null -> null
+}
+
+private fun formatDuration(durationMs: Long): String {
+    val totalSeconds = durationMs.coerceAtLeast(0L) / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%d:%02d".format(minutes, seconds)
+}
+
+private object ArtworkLoader {
+    private val cache = LruCache<String, Bitmap>(96)
+
+    fun load(context: Context, track: LibraryTrack): Bitmap? {
+        val cacheKey = track.albumId?.let { "${track.identity.volumeName}:album:$it" } ?: track.stableId
+        cache.get(cacheKey)?.let { return it }
+        val bitmap = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                context.contentResolver.loadThumbnail(track.contentUri, Size(160, 160), null)
+            } else {
+                MediaMetadataRetriever().run {
+                    try {
+                        setDataSource(context, track.contentUri)
+                        embeddedPicture?.let { bytes ->
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        }
+                    } finally {
+                        release()
+                    }
+                }
+            }
+        }.getOrNull()
+        if (bitmap != null) cache.put(cacheKey, bitmap)
+        return bitmap
+    }
+}

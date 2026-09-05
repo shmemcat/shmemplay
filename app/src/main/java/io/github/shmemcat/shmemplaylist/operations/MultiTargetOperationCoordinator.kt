@@ -7,6 +7,7 @@ import io.github.shmemcat.shmemplaylist.domain.BatchTargetDecision
 import io.github.shmemcat.shmemplaylist.domain.BatchTargetInput
 import io.github.shmemcat.shmemplaylist.domain.CanonicalGoneMadProfileV1
 import io.github.shmemcat.shmemplaylist.domain.M3uParserV1
+import io.github.shmemcat.shmemplaylist.domain.ManyTrackBatchOperationPlannerV2
 import io.github.shmemcat.shmemplaylist.domain.ParseResult
 import io.github.shmemcat.shmemplaylist.domain.SemanticChecksumV1
 import io.github.shmemcat.shmemplaylist.storage.ExactByteBackupRepository
@@ -24,6 +25,9 @@ fun interface PlaylistDocumentStorageResolver {
 data class BatchPreview(
     val plan: BatchOperationPlan,
     val snapshotByteSha256: Map<String, String>,
+    val requestedCanonicalPaths: List<String> = listOf(
+        plan.generatedPath.removePrefix("/storage/emulated/0/"),
+    ),
 )
 
 data class BatchConfirmation(
@@ -68,6 +72,31 @@ class MultiTargetOperationCoordinator(
         return BatchPreview(
             plan,
             inputs.associate { it.documentIdentity to ExactByteBackupRepository.sha256(it.originalBytes) },
+            listOf(canonicalNormalizedTrackPath),
+        )
+    }
+
+    suspend fun previewMany(
+        action: BatchAction,
+        canonicalNormalizedTrackPaths: List<String>,
+        targets: List<PlaylistDocumentStorage>,
+    ): BatchPreview {
+        val inputs = targets.map {
+            BatchTargetInput(
+                it.handle.documentIdentity,
+                it.handle.displayName,
+                it.readExact(),
+            )
+        }
+        val plan = ManyTrackBatchOperationPlannerV2.plan(
+            action,
+            canonicalNormalizedTrackPaths,
+            inputs,
+        )
+        return BatchPreview(
+            plan,
+            inputs.associate { it.documentIdentity to ExactByteBackupRepository.sha256(it.originalBytes) },
+            canonicalNormalizedTrackPaths,
         )
     }
 
@@ -80,9 +109,9 @@ class MultiTargetOperationCoordinator(
                 storage.readExact(),
             )
         }
-        val refreshed = BatchOperationPlannerV1.plan(
+        val refreshed = ManyTrackBatchOperationPlannerV2.plan(
             preview.plan.action,
-            preview.plan.generatedPath.removePrefix("/storage/emulated/0/"),
+            preview.requestedCanonicalPaths,
             refreshedInputs,
         )
         val refreshedPreview = BatchPreview(
@@ -90,6 +119,7 @@ class MultiTargetOperationCoordinator(
             refreshedInputs.associate {
                 it.documentIdentity to ExactByteBackupRepository.sha256(it.originalBytes)
             },
+            preview.requestedCanonicalPaths,
         )
         return BatchConfirmation(
             refreshedPreview,

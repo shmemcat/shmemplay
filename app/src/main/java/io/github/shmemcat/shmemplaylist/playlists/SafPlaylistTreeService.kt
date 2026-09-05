@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import io.github.shmemcat.shmemplaylist.domain.PlaylistNames
 import java.util.UUID
 
 class SafPlaylistTreeService(context: Context) {
@@ -35,6 +36,66 @@ class SafPlaylistTreeService(context: Context) {
                 }
             }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayName })
         } ?: error("Provider returned no cursor")
+    }
+
+    fun createPlaylist(treeUri: Uri, requestedName: String, bytes: ByteArray): Result<PlaylistDocument> =
+        runCatching {
+            val fileName = PlaylistNames.fileName(requestedName)
+            check(discoverDirectChildren(treeUri).getOrThrow().none {
+                it.displayName.equals(fileName, ignoreCase = true)
+            }) { "playlist-name-already-exists" }
+            val parent = DocumentsContract.buildDocumentUriUsingTree(
+                treeUri,
+                DocumentsContract.getTreeDocumentId(treeUri),
+            )
+            var created: Uri? = null
+            try {
+                created = DocumentsContract.createDocument(
+                    resolver,
+                    parent,
+                    "audio/x-mpegurl",
+                    fileName,
+                ) ?: error("provider-returned-no-document")
+                resolver.openOutputStream(created, "rwt")?.use { output ->
+                    output.write(bytes)
+                    output.flush()
+                } ?: error("playlist-output-unavailable")
+                val reread = resolver.openInputStream(created)?.use { it.readBytes() }
+                    ?: error("playlist-input-unavailable")
+                check(reread.contentEquals(bytes)) { "playlist-create-verification-failed" }
+                val verified = readDocument(created)
+                check(verified.displayName == fileName) { "provider-renamed-created-playlist" }
+                created = null
+                verified
+            } finally {
+                created?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
+            }
+        }
+
+    fun renamePlaylist(
+        treeUri: Uri,
+        document: PlaylistDocument,
+        requestedName: String,
+    ): Result<PlaylistDocument> = runCatching {
+        val fileName = PlaylistNames.fileName(requestedName)
+        check(discoverDirectChildren(treeUri).getOrThrow().none {
+            it.uri != document.uri && it.displayName.equals(fileName, ignoreCase = true)
+        }) { "playlist-name-already-exists" }
+        val renamed = DocumentsContract.renameDocument(resolver, document.uri, fileName)
+            ?: error("provider-returned-no-document")
+        readDocument(renamed).also {
+            check(it.displayName == fileName) { "playlist-rename-verification-failed" }
+        }
+    }
+
+    fun deletePlaylist(treeUri: Uri, document: PlaylistDocument): Result<Unit> = runCatching {
+        val expectedUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri,
+            DocumentsContract.getDocumentId(document.uri),
+        )
+        check(expectedUri == document.uri) { "document-not-below-bound-tree" }
+        check(DocumentsContract.deleteDocument(resolver, document.uri)) { "provider-refused-delete" }
+        check(!documentExists(document.uri)) { "playlist-delete-verification-failed" }
     }
 
     /**
@@ -187,6 +248,21 @@ class SafPlaylistTreeService(context: Context) {
             null,
         )?.use { it.moveToFirst() } == true
     }.getOrDefault(false)
+
+    private fun readDocument(uri: Uri): PlaylistDocument = resolver.query(
+        uri,
+        PROJECTION,
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        check(cursor.moveToFirst()) { "playlist-document-missing" }
+        PlaylistDocument(
+            uri,
+            cursor.getString(cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)),
+            cursor.getString(cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)),
+        )
+    } ?: error("provider-returned-no-cursor")
 
     private fun String.isPlaylistName(): Boolean =
         endsWith(".m3u", ignoreCase = true) || endsWith(".m3u8", ignoreCase = true)
