@@ -1,7 +1,7 @@
 # Cross-repository contract fixtures
 
 This directory holds versioned, platform-neutral fixtures consumed by both
-Shmemplaylist (Kotlin) and Shmembee (C#). `manifest.json` is the fixture-set
+shmemplay (Kotlin) and Shmembee (C#). `manifest.json` is the fixture-set
 index. Category manifests reference exact byte files; paths are relative to
 this directory so consumers do not depend on the host filesystem layout.
 

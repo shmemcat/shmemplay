@@ -11,7 +11,7 @@ unredacted paths, or track metadata in committed artifacts.
 - [ ] Revalidate the persisted writable tree grant
 - [ ] Complete the disposable provider capability test, including cleanup
 - [ ] Explicitly enable Phase 6 test mode
-- [ ] Create the test playlist through Shmemplaylist
+- [ ] Create the test playlist through shmemplay
 - [ ] Confirm another document with the same display name cannot be adopted
 - [ ] Confirm every non-test playlist remains mutation-disabled
 

@@ -5,10 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.shmemcat.shmemplaylist"
+    namespace = "io.github.shmemcat.shmemplay"
     compileSdk = 36
 
     defaultConfig {
+        // Keep the installed app identity so shmemplay remains an in-place update.
         applicationId = "io.github.shmemcat.shmemplaylist"
         minSdk = 26
         targetSdk = 36

@@ -2,7 +2,7 @@
 
 Status: proposed next development phase, September 5, 2026. This document captures the user's Musicolet references and requested behavior. It does not describe playback as already implemented. The screenshots are preserved unmodified in [player-references](player-references/).
 
-This extends the [2.0 browser plan](shmemplaylist-2-plan.md). For the player phase it supersedes that plan's no-playback restriction, single-action song popup, incoming-share entry point, five-destination navigation, and snapshot-only recipe creation. Existing direct M3U editing, selection, search normalization, dark purple appearance, compact lists, and fast scrolling remain foundations.
+This extends the [2.0 browser plan](browser-2-plan.md). For the player phase it supersedes that plan's no-playback restriction, single-action song popup, incoming-share entry point, five-destination navigation, and snapshot-only recipe creation. Existing direct M3U editing, selection, search normalization, dark purple appearance, compact lists, and fast scrolling remain foundations.
 
 ## Queue invariants
 
@@ -20,6 +20,8 @@ This extends the [2.0 browser plan](shmemplaylist-2-plan.md). For the player pha
 ## Navigation and appearance
 
 The app's display name is **shmemplay**. Keep the existing Android application identity and persisted storage names so the rename remains an update to the installed app, retaining its data and folder grants.
+
+The repository and Gradle project are now `shmemplay`, and source packages use `io.github.shmemcat.shmemplay`. Keep `io.github.shmemcat.shmemplaylist` as the Android application ID, preserve the previous launcher component through an activity alias, and retain `shmemplaylist.db`, existing preference keys, and the companion-test playlist's original filename. These remaining names are compatibility contracts, not unfinished branding changes.
 
 [Reference 1](player-references/01-now-playing.png), as revised by the user, defines seven icon destinations in this order: Queues, Now Playing, All Songs, Albums, Artists, Genres, Playlists. All Songs replaces the reference's dedicated Search destination and moves immediately to the right of Now Playing. Settings is accessed through the top-right gear; omit the redundant bottom settings/three-dot destination. There is no dedicated global Search screen. Contextual song and queue three-dot menus remain.
 

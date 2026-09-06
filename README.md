@@ -8,6 +8,11 @@ editor opens within the browser; the app no longer registers as an incoming
 audio-share destination. Native playback is planned in the
 [shmemplay player specification](docs/music-player-plan.md).
 
+The repository, Gradle project, and source namespace use the shmemplay name. The
+Android application ID remains `io.github.shmemcat.shmemplaylist`, with the same
+launcher component and persisted storage names, so builds signed with the same
+key can update existing installations without a data migration.
+
 > **Safety status:** Phase 7 enables real multi-playlist writes only after the
 > user deliberately enables them and the app verifies the safety prerequisites
 > for that operation. The unchecked Phase 6 physical-device matrix is retained
@@ -79,7 +84,7 @@ created from the editor. Playlist browsing also supports rename, delete, and
 static ALL/ANY membership recipes with positive or negative rules and explicit
 reruns.
 
-See [the 2.0 product and implementation plan](docs/shmemplaylist-2-plan.md) for
+See [the 2.0 product and implementation plan](docs/browser-2-plan.md) for
 the current interaction contract. The [technical specification](docs/tech-spec.md)
 and [Phase 7 device proof](docs/phase-7-device-proof.md) retain the original
 share-flow safety gates and physical-device verification guidance.

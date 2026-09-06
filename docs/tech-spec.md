@@ -1,13 +1,17 @@
-# Shmemplaylist Phase 1 technical specification
+# shmemplay Phase 1 technical specification
 
 > **Historical baseline:** This document remains the safety and compatibility authority for
 > the original shared-track workflow. The implemented launcher-browser scope and newer product
-> decisions are specified in [`shmemplaylist-2-plan.md`](shmemplaylist-2-plan.md), which supersedes
+> decisions are specified in [`browser-2-plan.md`](browser-2-plan.md), which supersedes
 > the earlier rejection/deferral of library browsing and multi-track operations.
 
 Status: authoritative repository specification for Phase 1  
 Product target: Android 16 with GoneMAD Music Player 4.1.11  
-Application ID and namespace: `io.github.shmemcat.shmemplaylist`
+Application ID: `io.github.shmemcat.shmemplaylist` (retained for installed-app compatibility)
+
+Current source namespace: `io.github.shmemcat.shmemplay`
+
+Current repository: `shmemcat/shmemplay`
 
 ## 1. Authority, scope, and classification
 
@@ -47,7 +51,7 @@ playlist-management workflow without replacing GoneMAD:
 
 GoneMAD alone owns playback, queues, audio focus, MediaSession, Bluetooth and
 Android Auto controls, equalization, library scanning, notifications, and
-widgets. Shmemplaylist receives current-track evidence, resolves one safe track
+widgets. shmemplay receives current-track evidence, resolves one safe track
 identity, reads the M3U/M3U8 documents shared with GoneMAD and desktop Shmembee,
 calculates membership and duplicate occurrences, and eventually performs
 explicit, verified, recoverable add/remove operations.
@@ -110,7 +114,8 @@ The repository files are the selected-version authority. Phase 1 uses:
 
 | Selection | Phase 1 value | Repository evidence |
 |---|---:|---|
-| Application ID / namespace | `io.github.shmemcat.shmemplaylist` | `app/build.gradle.kts` |
+| Application ID | `io.github.shmemcat.shmemplaylist` (compatibility) | `app/build.gradle.kts` |
+| Source namespace | `io.github.shmemcat.shmemplay` | `app/build.gradle.kts` |
 | Minimum SDK | 26 | `app/build.gradle.kts` |
 | Compile SDK | 36 | `app/build.gradle.kts` |
 | Target SDK | 36 | `app/build.gradle.kts` |
@@ -165,7 +170,7 @@ document-creation task performs no Git operation:
 - use the existing repository and preserve its history and all unrelated user
   changes; never initialize a nested repository;
 - confirm, before any release/push work, that the existing SSH origin is
-  `git@github.com:shmemcat/shmemplaylist.git`;
+  `git@github.com:shmemcat/shmemplay.git`;
 - inspect status, history, branch, remotes, tracked and untracked files before
   scaffolding or committing, and use the current branch unless repository policy
   requires otherwise;
@@ -196,7 +201,7 @@ are **Rejected** from Phase 1.
 Use one application module, organized by capability:
 
 ```text
-app/src/main/java/io/github/shmemcat/shmemplaylist/
+app/src/main/java/io/github/shmemcat/shmemplay/
   intake/ tracks/ playlists/ operations/ storage/
   persistence/ recovery/ settings/ diagnostics/ ui/
 contract-fixtures/
@@ -674,7 +679,7 @@ rollback, or recovery remains a hard gate.
   ID+volume and provider path mapping precede path/alias/manual tiers.
 - **Refined:** audio permission is required for the selected resolver on Android
   13+, not merely an optional fallback.
-- **Refined:** app name/ID is Shmemplaylist /
+- **Refined:** app name/ID is shmemplay /
   `io.github.shmemcat.shmemplaylist`, not the conceptual repository/app names.
 - **Refined:** discovery is direct-child only until recursion is explicitly
   designed.

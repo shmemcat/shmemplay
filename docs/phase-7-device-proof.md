@@ -97,10 +97,10 @@ stopped, and viewing the affected playlist:
       open-playlist cache behavior, and stale-overwrite behavior
 - [ ] Do not promise automatic refresh; retain the documented reopen/rescan
       instruction until device evidence supports something stronger
-- [ ] Let GoneMAD rewrite/save a Shmemplaylist result, then verify normalized
+- [ ] Let GoneMAD rewrite/save a shmemplay result, then verify normalized
       membership, order, duplicate semantics, and checksum interpretation
 - [ ] Open and save affected fixtures/playlists with Shmembee, synchronize by the
-      normal user workflow, then rescan in Shmemplaylist and GoneMAD
+      normal user workflow, then rescan in shmemplay and GoneMAD
 - [ ] Verify Shmembee-generated and rewritten relative/absolute, separator,
       Unicode, empty, duplicate, `.m3u`, and `.m3u8` cases reconcile without
       false membership or duplicate insertion

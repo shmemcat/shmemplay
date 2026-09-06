@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "shmemplaylist"
+rootProject.name = "shmemplay"
 include(":app")
 include(":domain")
