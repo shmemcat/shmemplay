@@ -329,24 +329,30 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
             }.onFailure { setError("Could not read local recipes. Saved definitions were kept: " + it.message) }
         }
     }
-    fun createNestedPlaylist(name: String, rule: PlaylistRuleNode, live: Boolean, existingId: String? = null) {
-        val grant = treeSettings.revalidate() as? PlaylistTreeGrantState.Valid ?: run { setError("Choose the source playlist folder first."); return }
+    fun createNestedPlaylist(name: String, rule: PlaylistRuleNode, live: Boolean, existingId: String? = null, excludeDuplicates: Boolean = true) {
+        if (mutableState.value.busy) return
+        val sources = NestedPlaylistRules.sources(rule)
+        val grant = if (sources.isNotEmpty() || !live) treeSettings.revalidate() as? PlaylistTreeGrantState.Valid else null
+        if ((sources.isNotEmpty() || !live) && grant == null) { setError("Choose the playlist folder first."); return }
         val tracks = mutableState.value.tracks
-        mutableState.value = mutableState.value.copy(mutation = BrowserMutationState.Working("Checking rule sources…"))
+        mutableState.value = mutableState.value.copy(mutation = BrowserMutationState.Working("Checking playlist rules…"), error = null)
         viewModelScope.launch {
             val checked = runCatching { withContext(Dispatchers.IO) {
                 require(name.isNotBlank()) { "Enter a playlist name." }
-                val documents = treeService.discoverDirectChildren(grant.treeUri).getOrThrow()
-                val first = playlistScanner.scan(documents,tracks)
-                delay(350)
-                val second = playlistScanner.scan(treeService.discoverDirectChildren(grant.treeUri).getOrThrow(),tracks)
-                val sources = NestedPlaylistRules.sources(rule)
-                fun signature(scan: PlaylistLibraryScan) = scan.playlists.filter { it.document.uri.toString() in sources }.associate { it.document.uri.toString() to it.entries.map { e -> e.normalizedPath } }
-                check(signature(first) == signature(second)) { "Source files are changing. Wait for copying to finish and try again." }
-                val result = NestedPlaylistRules.evaluate(tracks.mapTo(linkedSetOf()) { it.stableId },second.playlists.associate { it.document.uri.toString() to it.resolvedTrackIds },rule)
+                val checkedScan = if (sources.isEmpty()) PlaylistLibraryScan(emptyList(), emptyList()) else {
+                    val documents = treeService.discoverDirectChildren(requireNotNull(grant).treeUri).getOrThrow()
+                    val first = playlistScanner.scan(documents, tracks)
+                    delay(350)
+                    val second = playlistScanner.scan(treeService.discoverDirectChildren(grant.treeUri).getOrThrow(), tracks)
+                    fun signature(scan: PlaylistLibraryScan) = scan.playlists.filter { it.document.uri.toString() in sources }
+                        .associate { it.document.uri.toString() to it.entries.map { e -> e.normalizedPath } }
+                    check(signature(first) == signature(second)) { "Source files are changing. Wait for copying to finish and try again." }
+                    second
+                }
+                val result = RuleLibraryIndex(tracks).evaluate(rule, checkedScan.playlists, excludeDuplicates)
                 check(result is RecipeEvaluation.Success) { "A source is missing or unreadable. Refresh or repair the rules first." }
                 val selected = tracks.filter { it.stableId in result.trackIdentities }
-                if (live) localRecipes.save(LocalPlaylistRecipe(existingId ?: java.util.UUID.randomUUID().toString(),name.trim(),rule))
+                if (live) localRecipes.save(LocalPlaylistRecipe(existingId ?: java.util.UUID.randomUUID().toString(), name.trim(), rule, excludeDuplicates = excludeDuplicates))
                 selected
             } }
             checked.onSuccess { selected ->
@@ -354,12 +360,13 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
                     mutableState.value = mutableState.value.copy(mutation = BrowserMutationState.Result("Live playlist saved locally."))
                     refreshLivePlaylists()
                 } else {
-                    val paths = canonicalPaths(selected,allowEmpty = true)
-                    if (paths != null) createPlaylistFromPaths(name,paths,null)
+                    val paths = canonicalPaths(selected, allowEmpty = true)
+                    if (paths != null) createPlaylistFromPaths(name, paths, null)
                 }
             }.onFailure { setError(it.message ?: "Could not create playlist.") }
         }
     }
+
 
     fun clearMutationMessage() {
         if (mutableState.value.mutation !is BrowserMutationState.Working) {

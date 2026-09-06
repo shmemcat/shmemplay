@@ -1,0 +1,304 @@
+<div id="live-playlist-builder" aria-label="shmemplay mobile playlist builder">
+  <div class="lp-phone">
+    <div class="lp-status"><span>9:41</span><span><i data-lucide="signal"></i><i data-lucide="wifi"></i><i data-lucide="battery-full"></i></span></div>
+    <header class="lp-header"></header>
+    <main class="lp-main"></main>
+    <footer class="lp-footer"></footer>
+    <div class="lp-home"><span></span></div>
+  </div>
+</div>
+<style>
+#live-playlist-builder{--lp-bg:light-dark(#faf8fc,#19191d);--lp-surface:light-dark(#f0ecf5,#242328);--lp-raised:light-dark(#e8e1ef,#302c38);--lp-line:light-dark(#d7cfdf,#413b49);--lp-text:light-dark(#25202c,#f4f1f7);--lp-muted:light-dark(#685e74,#bcb5c8);--lp-accent:light-dark(#69448f,#ceb9ff);--lp-selected:light-dark(#e8dcf8,#40334f);--lp-button:light-dark(#69448f,#ceb9ff);--lp-onbutton:light-dark(#ffffff,#251a34);--lp-error:light-dark(#a32643,#ffc1cd);font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.45;color:var(--lp-text);max-width:420px;width:100%;margin:0 auto}
+#live-playlist-builder *{box-sizing:border-box}#live-playlist-builder [hidden]{display:none!important}
+#live-playlist-builder .lp-phone{background:var(--lp-bg);border:1px solid var(--lp-line);border-radius:20px;overflow:hidden;min-height:760px;display:flex;flex-direction:column}
+#live-playlist-builder button,#live-playlist-builder input,#live-playlist-builder select{font:inherit;color:inherit}
+#live-playlist-builder button{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:0;border-radius:8px;min-height:44px;padding:8px 12px;touch-action:manipulation}
+#live-playlist-builder button:hover{background:var(--lp-surface)}#live-playlist-builder button:disabled{opacity:.45;cursor:default}
+#live-playlist-builder button:focus-visible,#live-playlist-builder input:focus-visible,#live-playlist-builder select:focus-visible{outline:2px solid var(--lp-accent);outline-offset:2px}
+#live-playlist-builder svg{width:21px;height:21px;flex-shrink:0;stroke-width:1.8}#live-playlist-builder .lp-status svg{width:14px;height:14px}
+#live-playlist-builder .lp-status{display:flex;align-items:center;justify-content:space-between;padding:10px 21px 0;font-size:12px;color:var(--lp-muted);height:31px}
+#live-playlist-builder .lp-status>span:last-child{display:flex;gap:6px}
+#live-playlist-builder .lp-header{display:flex;align-items:center;gap:4px;padding:10px 13px;border-bottom:1px solid var(--lp-line);min-height:69px}
+#live-playlist-builder .lp-header h1{font-size:20px;line-height:1.3;font-weight:600;margin:0;flex:1}
+#live-playlist-builder .lp-icon{width:44px;flex-shrink:0;padding:10px}
+#live-playlist-builder .lp-header .lp-icon{margin-left:-6px}
+#live-playlist-builder .lp-kicker{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--lp-muted);margin:0 0 5px}
+#live-playlist-builder .lp-tag{font-size:11px;letter-spacing:.2px;padding:3px 7px;border-radius:5px;background:var(--lp-selected);color:var(--lp-accent);white-space:nowrap}
+#live-playlist-builder .lp-main{padding:20px 18px 22px;flex:1;min-width:0}
+#live-playlist-builder .lp-label{display:block;color:var(--lp-muted);font-size:12px;margin-bottom:6px}
+#live-playlist-builder input[type=text],#live-playlist-builder input[type=number],#live-playlist-builder select{width:100%;min-width:0;min-height:46px;border:1px solid var(--lp-line);border-radius:8px;padding:10px 12px;background:var(--lp-surface);font-size:16px}
+#live-playlist-builder .lp-name{font-size:22px!important;font-weight:500;background:transparent!important;border:0!important;border-radius:0!important;border-bottom:1px solid var(--lp-line)!important;padding:0 0 10px!important;min-height:40px!important}
+#live-playlist-builder .lp-mode{display:flex;gap:3px;border:1px solid var(--lp-line);border-radius:9px;padding:3px;margin-top:17px}
+#live-playlist-builder .lp-mode button{flex:1;min-height:39px;font-size:14px}
+#live-playlist-builder .lp-mode button[aria-pressed=true]{color:var(--lp-accent);background:var(--lp-selected)}
+#live-playlist-builder .lp-help{font-size:12px;color:var(--lp-muted);margin:8px 0 0;line-height:1.5}
+#live-playlist-builder .lp-source{display:flex;align-items:center;gap:10px;margin:19px 0 23px;border-bottom:1px solid var(--lp-line);padding-bottom:15px}
+#live-playlist-builder .lp-source>svg{color:var(--lp-muted)}#live-playlist-builder .lp-source label{font-size:13px;white-space:nowrap}
+#live-playlist-builder .lp-source select{margin-left:auto;width:auto;max-width:66%;border:0;background:transparent;font-size:14px;padding:7px 4px;min-height:44px;color:var(--lp-accent)}
+#live-playlist-builder .lp-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+#live-playlist-builder h2{font-size:15px;font-weight:600;margin:0}#live-playlist-builder .lp-logic{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--lp-muted)}
+#live-playlist-builder .lp-logic select{font-size:13px;min-height:38px;width:auto;color:var(--lp-accent);padding:5px 7px;background:var(--lp-selected);border:0}
+#live-playlist-builder .lp-rule{display:flex;align-items:stretch;min-width:0;background:var(--lp-surface);border:1px solid var(--lp-line);border-radius:9px}
+#live-playlist-builder .lp-rule>button{width:100%;padding:11px 12px;text-align:left;justify-content:space-between;min-height:68px;gap:10px}
+#live-playlist-builder .lp-rule-copy{min-width:0;flex:1;overflow-wrap:anywhere}
+#live-playlist-builder .lp-rule-field{display:block;color:var(--lp-muted);font-size:12px;margin-bottom:2px}
+#live-playlist-builder .lp-rule-value{font-size:15px;font-weight:500}
+#live-playlist-builder .lp-rule>button>svg{width:16px;height:16px;color:var(--lp-muted)}
+#live-playlist-builder .lp-join{color:var(--lp-muted);font-size:10px;letter-spacing:1px;padding:5px 0 5px 15px;line-height:1.2}
+#live-playlist-builder .lp-group{border:1px solid var(--lp-line);border-left:3px solid var(--lp-accent);border-radius:9px;background:var(--lp-surface);padding:9px 10px 6px}
+#live-playlist-builder .lp-group .lp-section-head{margin-bottom:7px;min-height:38px}
+#live-playlist-builder .lp-group-title{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--lp-muted)}#live-playlist-builder .lp-group-title svg{width:16px;height:16px}
+#live-playlist-builder .lp-group .lp-rule{background:var(--lp-bg);border:0;border-radius:6px}
+#live-playlist-builder .lp-group .lp-rule>button{min-height:59px;padding:8px 10px}
+#live-playlist-builder .lp-group .lp-join{padding:4px 0 4px 11px}
+#live-playlist-builder .lp-group .lp-rule-field{font-size:11px}
+#live-playlist-builder .lp-add{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+#live-playlist-builder .lp-add button{color:var(--lp-accent);padding:7px 9px;font-size:13px;min-height:42px}
+#live-playlist-builder .lp-add svg{width:17px;height:17px}
+#live-playlist-builder .lp-group .lp-add{margin-top:4px;gap:0}
+#live-playlist-builder .lp-group .lp-add button{font-size:12px;padding:7px;min-height:39px}
+#live-playlist-builder .lp-group .lp-add .lp-icon{margin-left:auto;width:39px;color:var(--lp-muted)}
+#live-playlist-builder .lp-disclosure{border-top:1px solid var(--lp-line);margin-top:18px;padding-top:7px}
+#live-playlist-builder .lp-disclosure>button{width:100%;justify-content:space-between;padding:9px 0;min-height:56px;text-align:left}
+#live-playlist-builder .lp-disclosure>button>span{flex:1;min-width:0;font-size:14px}
+#live-playlist-builder .lp-sub{display:block;font-size:12px;color:var(--lp-muted);margin-top:2px}
+#live-playlist-builder .lp-disclosure>button>svg{width:18px;height:18px;color:var(--lp-muted)}
+#live-playlist-builder .lp-settings{padding:10px 0 2px}
+#live-playlist-builder .lp-setting{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;font-size:14px}
+#live-playlist-builder .lp-switch{appearance:none;width:39px;height:24px;border-radius:20px;background:var(--lp-line);border:0;position:relative;cursor:pointer;flex-shrink:0}
+#live-playlist-builder .lp-switch:before{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:var(--lp-muted)}
+#live-playlist-builder .lp-switch:checked{background:var(--lp-accent)}#live-playlist-builder .lp-switch:checked:before{left:18px;background:var(--lp-bg)}
+#live-playlist-builder .lp-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#live-playlist-builder .lp-settings .lp-label{margin-top:10px}
+#live-playlist-builder .lp-footer{border-top:1px solid var(--lp-line);padding:12px 18px 10px;background:var(--lp-bg)}
+#live-playlist-builder .lp-preview-link{width:100%;justify-content:space-between;margin-bottom:8px;padding:3px 0;text-align:left}
+#live-playlist-builder .lp-preview-link>span{display:flex;align-items:center;gap:9px}#live-playlist-builder .lp-preview-link .lp-count{font-size:14px}
+#live-playlist-builder .lp-preview-link .lp-peek{color:var(--lp-accent);font-size:13px;gap:2px}#live-playlist-builder .lp-preview-link svg{width:17px;height:17px}
+#live-playlist-builder .lp-primary{background:var(--lp-button)!important;color:var(--lp-onbutton)!important;font-weight:600;min-height:48px;width:100%;border-radius:9px}
+#live-playlist-builder .lp-secondary{border:1px solid var(--lp-line);width:100%;margin-top:10px}
+#live-playlist-builder .lp-home{height:20px;display:flex;align-items:center;justify-content:center}
+#live-playlist-builder .lp-home span{height:4px;width:108px;background:var(--lp-muted);opacity:.55;border-radius:4px}
+#live-playlist-builder .lp-editor-field{margin:0 0 21px}#live-playlist-builder .lp-editor-field>.lp-label{font-size:13px;margin-bottom:8px}
+#live-playlist-builder .lp-caption{font-size:13px;color:var(--lp-muted);margin:0 0 23px;line-height:1.6}
+#live-playlist-builder .lp-reading{border-left:2px solid var(--lp-accent);padding:4px 0 4px 13px;margin-top:27px;font-size:15px;line-height:1.65}
+#live-playlist-builder .lp-reading .lp-kicker{font-size:10px}
+#live-playlist-builder .lp-text-action{color:var(--lp-accent);font-size:13px;padding:6px 0;justify-content:flex-start}
+#live-playlist-builder .lp-danger{color:var(--lp-error);font-size:13px;width:100%;margin-top:10px}
+#live-playlist-builder .lp-error{font-size:13px;color:var(--lp-error);margin:10px 0}
+#live-playlist-builder .lp-track{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--lp-line)}
+#live-playlist-builder .lp-art{background:var(--lp-raised);color:var(--lp-accent);width:43px;height:43px;display:flex;align-items:center;justify-content:center;border-radius:5px;flex-shrink:0}
+#live-playlist-builder .lp-track-copy{flex:1;min-width:0}#live-playlist-builder .lp-track-title{font-size:14px;display:block;overflow-wrap:anywhere}
+#live-playlist-builder .lp-track small{font-size:12px;color:var(--lp-muted)}#live-playlist-builder .lp-track .lp-duration{font-size:11px;color:var(--lp-muted);font-variant-numeric:tabular-nums}
+#live-playlist-builder .lp-preview-title{font-size:26px;font-weight:500;margin:3px 0 3px}
+#live-playlist-builder .lp-recipe{background:var(--lp-surface);border-radius:8px;padding:13px 14px;font-size:13px;line-height:1.65;margin:18px 0}
+#live-playlist-builder .lp-empty{padding:30px 0;text-align:center}#live-playlist-builder .lp-empty svg{width:32px;height:32px;color:var(--lp-muted);margin-bottom:10px}
+#live-playlist-builder .lp-library-item{width:100%;justify-content:flex-start;text-align:left;gap:14px;padding:14px 0;border-bottom:1px solid var(--lp-line)}
+#live-playlist-builder .lp-library-item>span{flex:1;min-width:0;overflow-wrap:anywhere}
+#live-playlist-builder .lp-library-item>svg{color:var(--lp-accent)}
+#live-playlist-builder .lp-draft{margin:18px 0;background:var(--lp-surface);border-radius:8px;padding:14px;font-size:14px}
+#live-playlist-builder .lp-draft button{margin-top:7px;padding-left:0;color:var(--lp-accent)}
+#live-playlist-builder .lp-saved-mark{color:var(--lp-accent);display:flex;align-items:center;gap:7px;font-size:12px;margin-bottom:17px}
+#live-playlist-builder .lp-inline-empty{font-size:13px;color:var(--lp-muted);padding:14px 0}
+@media(max-width:360px){#live-playlist-builder .lp-main{padding:17px 13px}#live-playlist-builder .lp-footer{padding-left:13px;padding-right:13px}#live-playlist-builder .lp-header h1{font-size:18px}#live-playlist-builder .lp-name{font-size:20px!important}#live-playlist-builder .lp-group{padding-left:8px;padding-right:8px}#live-playlist-builder .lp-logic{gap:4px}#live-playlist-builder .lp-group .lp-add button{padding:7px 5px}}
+#live-playlist-builder .lp-phone{position:relative}
+#live-playlist-builder .lp-rules-section{margin-top:25px}
+#live-playlist-builder .lp-dedupe{display:flex;gap:12px;align-items:center;border-top:1px solid var(--lp-line);padding:18px 0 0;margin-top:18px;font-size:14px;min-height:58px;cursor:pointer}
+#live-playlist-builder .lp-dedupe input{width:20px;height:20px;margin:0;accent-color:var(--lp-accent);flex-shrink:0}
+#live-playlist-builder .lp-value-picker{border:1px solid var(--lp-line);background:var(--lp-surface);width:100%;justify-content:space-between;text-align:left;min-height:48px;font-size:16px;padding:11px 12px}
+#live-playlist-builder .lp-value-picker>span{min-width:0;overflow-wrap:anywhere}
+#live-playlist-builder .lp-chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0}
+#live-playlist-builder .lp-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;background:var(--lp-selected);color:var(--lp-accent);border-radius:6px;font-size:12px;overflow-wrap:anywhere;max-width:100%}
+#live-playlist-builder .lp-overlay{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:18px 12px;background:#0009}
+#live-playlist-builder .lp-dialog{background:var(--lp-surface);border:1px solid var(--lp-line);border-radius:13px;width:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden}
+#live-playlist-builder .lp-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 12px 4px 17px}
+#live-playlist-builder .lp-dialog-head h2{font-size:20px;font-weight:500}
+#live-playlist-builder .lp-picker-meta{padding:0 17px 12px;display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--lp-muted)}
+#live-playlist-builder .lp-picker-selection{color:var(--lp-accent);white-space:nowrap}
+#live-playlist-builder .lp-picker-body{position:relative;border-top:1px solid var(--lp-line);border-bottom:1px solid var(--lp-line);background:var(--lp-bg)}
+#live-playlist-builder .lp-picker-viewport{height:318px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;margin-right:36px;touch-action:pan-y}
+#live-playlist-builder .lp-picker-viewport::-webkit-scrollbar{display:none}
+#live-playlist-builder .lp-picker-spacer{position:relative}
+#live-playlist-builder .lp-picker-row{position:absolute;left:8px;right:0;height:58px;min-height:58px;border-radius:6px;width:calc(100% - 8px);padding:7px 10px;text-align:left;justify-content:space-between;gap:8px}
+#live-playlist-builder .lp-picker-row[aria-pressed=true]{background:var(--lp-selected);color:var(--lp-accent)}
+#live-playlist-builder .lp-picker-row>span{min-width:0;display:block;flex:1}
+#live-playlist-builder .lp-picker-name{display:block;font-size:14px;line-height:20px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+#live-playlist-builder .lp-picker-description{display:block;font-size:11px;color:var(--lp-muted);line-height:17px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+#live-playlist-builder .lp-picker-row svg{width:19px;height:19px}
+#live-playlist-builder .lp-picker-search{display:flex;align-items:center;gap:9px;margin:0 12px 0 17px;border-bottom:1px solid var(--lp-line);min-height:55px}
+#live-playlist-builder .lp-picker-search>svg{color:var(--lp-muted);width:20px;height:20px}
+#live-playlist-builder .lp-picker-search input{flex:1;border:0;background:transparent;padding:9px 0;min-width:0;width:0}
+#live-playlist-builder .lp-picker-search button{width:36px;padding:5px;flex-shrink:0}
+#live-playlist-builder .lp-picker-foot{padding:12px 15px;display:flex;gap:8px;align-items:center;justify-content:flex-end}
+#live-playlist-builder .lp-picker-foot .lp-primary{width:auto;min-width:125px;min-height:44px}
+#live-playlist-builder .lp-fast{position:absolute;right:0;top:9px;bottom:9px;width:36px;touch-action:none}
+#live-playlist-builder .lp-fast-rail{position:absolute;right:16px;width:3px;top:0;bottom:0;background:var(--lp-line);border-radius:6px;pointer-events:none}
+#live-playlist-builder .lp-fast-thumb{position:absolute;right:0;left:0;height:24px;top:0;background:var(--lp-accent);border-radius:6px}
+#live-playlist-builder .lp-fast input{position:absolute;inset:0;width:36px;height:100%;writing-mode:vertical-lr;direction:ltr;opacity:.001;margin:0;cursor:grab;touch-action:none}
+#live-playlist-builder .lp-fast:focus-within{outline:2px solid var(--lp-accent);outline-offset:-3px;border-radius:5px}
+#live-playlist-builder .lp-fast.lp-dragging .lp-fast-rail{width:9px;right:13px;background:var(--lp-selected)}
+#live-playlist-builder .lp-letter-bubble{position:absolute;right:43px;top:0;min-width:52px;height:52px;padding:0 12px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:var(--lp-accent);color:var(--lp-onbutton);font-size:25px;pointer-events:none}
+#live-playlist-builder .lp-picker-empty{padding:55px 15px;text-align:center;color:var(--lp-muted);font-size:14px}
+
+</style>
+<script>
+(()=>{
+const root=document.getElementById('live-playlist-builder');
+const $=s=>root.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon=n=>`<i data-lucide="${n}" aria-hidden="true"></i>`;
+const button=(action,label,cls='',extra='')=>`<button type="button" class="${cls}" data-act="${action}" ${extra}>${label}</button>`;
+const back=()=>button('back',icon('chevron-left'),'lp-icon','aria-label="Go back"');
+const options=(items,value)=>items.map(x=>{const v=typeof x==='string'?x:x[0],l=typeof x==='string'?x:x[1];return `<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(l)}</option>`}).join('');
+const rows=[
+['(Everything Is) Debatable','hellogoodbye','Indie pop',2013,2,5,236,118,true],
+['And Everything Becomes a Blur','hellogoodbye','Indie pop',2013,7,4,269,110,true],
+['The Magic Hour Is Now','hellogoodbye','Indie pop',2013,1,4,189,105,true],
+['Summer of the Lily Pond','hellogoodbye','Indie pop',2013,3,5,276,94,true],
+['Everything in Bloom','Mira Vale','Dream pop',2024,0,4,253,92,true],
+['Bloom','Mira Vale','Dream pop',2024,2,5,192,85,true],
+['Glasshouse','Mira Vale','Dream pop',2024,12,4,241,100,true],
+['Hollywood Baby','100 gecs','Hyperpop',2023,3,4,187,160,true],
+['Doritos & Fritos','100 gecs','Hyperpop',2022,8,3,196,170,false],
+['Life','RM','K-pop',2015,2,5,257,83,true],
+['Watermelon Sugar','Harry Styles','Pop',2019,15,4,174,95,true],
+['Afterglow','The Satellites','Indie rock',2024,1,4,227,112,true],
+['Don’t Look Back','The Satellites','Indie rock',2024,4,5,224,121,true],
+['Snowfall','Juniper','Folk',2021,0,3,186,78,false],
+['Winter Letters','Juniper','Folk',2021,3,4,192,82,true],
+['City Lights','Luna Park','Electronic',2022,0,4,226,124,false],
+['Just Don’t Let Go Just Don’t','hellogoodbye','Indie pop',2013,1,4,215,113,false],
+['Bloom','Mira Vale','Dream pop',2024,2,5,192,85,true]
+];
+const tracks=rows.map((r,id)=>Object.fromEntries(['title','artist','genre','year','plays','rating','seconds','bpm','favorite'].map((k,i)=>[k,r[i]]).concat([['id',id],['playlist',r[8]?['Favorites',...(id%2===0?['On repeat']:[])]:['Recently added']]])));
+const fields={playlist:{name:'Playlist',kind:'playlist',icon:'list-music'},artist:{name:'Artist',kind:'text',icon:'user-round'},genre:{name:'Genre',kind:'text',icon:'tags'},title:{name:'Song title',kind:'text',icon:'music-2'},rating:{name:'Rating',kind:'number',icon:'star'}};
+const ops={text:[['is','is'],['not','is not'],['any','is any of'],['contains','contains'],['starts','starts with'],['missing','has no value']],playlist:[['is','is in'],['not','is not in']],number:[['lt','is less than'],['gte','is at least'],['is','is'],['between','is between']]};
+let seq=10,screen='builder',stack=[],edit=null,saveNotice=false;
+let state={name:'A little less familiar',mode:'live',dedupe:true,rule:{id:0,type:'group',mode:'all',children:[{id:1,type:'rule',field:'playlist',op:'is',value:'Favorites'},{id:2,type:'group',mode:'any',children:[{id:3,type:'rule',field:'genre',op:'is',value:'Indie pop'},{id:4,type:'rule',field:'genre',op:'is',value:'Dream pop'}]}]}};
+let saved=null,groupId=0;
+const tweaks={logicWords:'ALL / ANY',dense:false};
+const find=(id,n=state.rule)=>n.id===Number(id)?n:(n.children||[]).map(c=>find(id,c)).find(Boolean);
+const remove=(id,n=state.rule)=>{if(n.children){n.children=n.children.filter(c=>c.id!==Number(id));n.children.forEach(c=>remove(id,c))}};
+const norm=s=>String(s??'').toLocaleLowerCase().trim();
+function evalNode(n,t){if(n.type==='group'){if(!n.children.length)return true;return n.mode==='all'?n.children.every(c=>evalNode(c,t)):n.children.some(c=>evalNode(c,t))}const raw=t[n.field],v=norm(n.value),a=norm(raw);if(n.field==='playlist')return n.op==='is'?raw.some(x=>norm(x)===v):!raw.some(x=>norm(x)===v);if(n.op==='missing')return !a;if(n.op==='is')return a===v;if(n.op==='not')return a!==v;if(n.op==='any')return (n.values||[]).map(norm).includes(a);if(n.op==='contains')return a.includes(v);if(n.op==='starts')return a.startsWith(v);if(n.op==='lt')return Number(raw)<Number(n.value);if(n.op==='gte')return Number(raw)>=Number(n.value);if(n.op==='between')return Number(raw)>=Number(n.value)&&Number(raw)<=Number(n.value2);return false}
+function results(){let matching=tracks.filter(t=>evalNode(state.rule,t));const matched=matching.length;if(state.dedupe){const seen=new Set();matching=matching.filter(t=>{const key=norm(t.artist+'|'+t.title);if(seen.has(key))return false;seen.add(key);return true})}return {tracks:matching,matched,seconds:matching.reduce((s,t)=>s+t.seconds,0)}}
+const duration=s=>s>=3600?`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`:`${Math.floor(s/60)} min`;
+const ruleText=n=>`${fields[n.field].name} ${(ops[fields[n.field].kind].find(o=>o[0]===n.op)||['','is'])[1]}${n.op==='missing'?'':` ${n.op==='any'&&n.values?n.values.join(', '):n.value}${n.op==='between'?' and '+n.value2:''}`}`;
+const recipe=n=>n.type==='rule'?ruleText(n):n.children.length?'('+n.children.map(recipe).join(n.mode==='all'?' AND ':' OR ')+')':'All songs';
+function logic(n){return `<span class="lp-logic"><span>Match</span><select aria-label="${n.id===0?'Main':'Group'} matching logic" data-logic="${n.id}">${options([['all',tweaks.logicWords==='ALL / ANY'?'ALL':'Every rule'],['any',tweaks.logicWords==='ALL / ANY'?'ANY':'Any rule']],n.mode)}</select></span>`}
+function ruleHtml(n){const text=ruleText(n).slice(fields[n.field].name.length+1);return `<div class="lp-rule">${button('edit',`<span class="lp-rule-copy"><span class="lp-rule-field">${fields[n.field].name}</span><span class="lp-rule-value">${esc(text)}</span></span>${icon('chevron-right')}`,'',`data-id="${n.id}" aria-label="Edit ${esc(ruleText(n))}"`)}</div>`}
+function additions(n,inGroup=false){return `<div class="lp-add">${button('add-rule',icon('plus')+'Rule','',`data-id="${n.id}" aria-label="Add rule${inGroup?' to group':''}"`)}${button('add-group',icon('folder-plus')+'Group','',`data-id="${n.id}" aria-label="Add group${inGroup?' inside group':''}"`)}${inGroup?button('open-group',icon('ellipsis'),'lp-icon',`data-id="${n.id}" aria-label="Open group options"`):''}</div>`}
+function groupHtml(n,depth=0){const body=n.children.map((c,i)=>(i?`<div class="lp-join">${n.mode==='all'?'AND':'OR'}</div>`:'')+(c.type==='rule'?ruleHtml(c):depth===0?`<section class="lp-group" aria-label="Nested rule group"><div class="lp-section-head"><span class="lp-group-title">${icon('folder-tree')}Group</span>${logic(c)}</div>${groupHtml(c,depth+1)}${additions(c,true)}</section>`:`<div class="lp-rule">${button('open-group',`<span class="lp-rule-copy"><span class="lp-rule-field">Nested group · match ${c.mode}</span><span class="lp-rule-value">${c.children.length} ${c.children.length===1?'condition':'conditions'}</span></span>${icon('chevron-right')}`,'',`data-id="${c.id}"`)}</div>`)).join('');return body||'<div class="lp-inline-empty">No rules yet. This group matches all songs.</div>'}
+function settingsSummary(){return state.dedupe?'Duplicate songs excluded':'Duplicate songs included'}
+function settings(){return `<label class="lp-dedupe"><input type="checkbox" data-setting="dedupe" aria-label="Don't add duplicate songs" ${state.dedupe?'checked':''}><span>Don't add duplicate songs</span></label>`}
+function setHeader(title,tag=''){ $('.lp-header').innerHTML=back()+`<h1>${title}</h1>${tag?`<span class="lp-tag">${tag}</span>`:''}` }
+function footer(){const r=results();$('.lp-footer').innerHTML=button('preview',`<span>${icon('list-music')}<span class="lp-count" aria-live="polite">${r.tracks.length} songs <span style="color:var(--lp-muted)">· ${duration(r.seconds)}</span></span></span><span class="lp-peek">Preview ${icon('chevron-right')}</span>`,'lp-preview-link')+button('save',saved?'Save changes':'Create playlist','lp-primary')+'<div class="lp-error" role="alert" hidden></div>';icons()}
+function builder(){setHeader('Playlist builder');$('.lp-main').innerHTML=`<label><span class="lp-label">PLAYLIST NAME</span><input type="text" class="lp-name" aria-label="Playlist name" maxlength="100" value="${esc(state.name)}" placeholder="Give your mix a name"></label><div class="lp-mode" role="group" aria-label="Playlist type">${button('mode',icon('refresh-cw')+'Live','',`data-mode="live" aria-pressed="${state.mode==='live'}"`)}${button('mode',icon('list-music')+'Snapshot','',`data-mode="snapshot" aria-pressed="${state.mode==='snapshot'}"`)}</div><p class="lp-help">${state.mode==='live'?'Updates as your library and playlists change.':'Keeps the songs matching now as a file playlist.'}</p><section class="lp-rules-section" aria-label="Playlist rules"><div class="lp-section-head"><h2>Rules</h2>${logic(state.rule)}</div>${groupHtml(state.rule)}${additions(state.rule)}</section>${settings()}`;footer()}
+function suggestions(field){return [...new Set(tracks.flatMap(t=>t[field]))].sort((a,b)=>String(a).localeCompare(String(b)))}
+function editor(){
+setHeader(edit.isNew?'Add rule':'Edit rule');const n=edit.node,f=fields[n.field],browse=f.kind==='playlist'||f.kind==='text'&&['is','not','any'].includes(n.op),values=n.values||[];
+const chooser=`<span class="lp-label">${n.op==='any'?'Values':'Value'}</span><button type="button" class="lp-value-picker" data-pick-act="open" aria-label="Choose ${f.name.toLowerCase()} value"><span>${n.op==='any'?(values.length?`${values.length} selected`:'Choose values'):esc(n.value||'Choose '+f.name.toLowerCase())}</span>${icon('chevron-right')}</button>${n.op==='any'&&values.length?`<div class="lp-chips">${values.map(v=>`<span class="lp-chip">${esc(v)}</span>`).join('')}</div>`:''}`;
+$('.lp-main').innerHTML=`<p class="lp-caption">${edit.parent===0?'This rule belongs to the main list.':'This rule belongs to a group.'} Choose what a song needs to match.</p><div class="lp-editor-field"><label><span class="lp-label">Song field</span><select data-edit="field" aria-label="Song field">${options(Object.entries(fields).map(([k,v])=>[k,v.name]),n.field)}</select></label></div><div class="lp-editor-field"><label><span class="lp-label">Condition</span><select data-edit="op" aria-label="Condition">${options(ops[f.kind],n.op)}</select></label></div><div class="lp-editor-field">${n.op==='missing'?'':browse?chooser:`<label><span class="lp-label">${n.op==='between'?'From':'Value'}</span><input data-edit="value" aria-label="Rule value" type="${f.kind==='number'?'number':'text'}" ${f.kind==='number'?'min="0" max="5"':''} value="${esc(n.value)}" autocomplete="off"></label>${n.op==='between'?`<label><span class="lp-label" style="margin-top:12px">To</span><input data-edit="value2" aria-label="Upper value" type="number" min="0" max="5" value="${esc(n.value2??'')}"></label>`:''}`}</div>${n.field==='rating'?'<p class="lp-help">Rating is measured from 0 to 5.</p>':''}<div class="lp-reading"><div class="lp-kicker">This rule reads</div><span class="lp-read-text">${esc(ruleText(n))}</span></div><p class="lp-help lp-edit-count">${tracks.filter(t=>evalNode(n,t)).length} of ${tracks.length.toLocaleString()} sample songs match this rule alone.</p>`;
+$('.lp-footer').innerHTML=button('apply-rule',edit.isNew?'Add rule':'Done','lp-primary')+(!edit.isNew?button('delete-rule',icon('trash-2')+'Remove rule','lp-danger'):'')+'<div class="lp-error" role="alert" hidden></div>';
+}
+function groupScreen(){const n=find(groupId);setHeader('Rule group');$('.lp-main').innerHTML=`<p class="lp-caption">This group counts as one condition in its parent. Keep related alternatives together.</p><div class="lp-section-head"><h2>${n.children.length} conditions</h2>${logic(n)}</div>${groupHtml(n)}${additions(n)}`;$('.lp-footer').innerHTML=button('back','Done','lp-primary')+button('delete-group',icon('trash-2')+'Remove group','lp-danger')}
+function trackList(list){return list.map(t=>`<div class="lp-track"><span class="lp-art">${icon('disc-3')}</span><span class="lp-track-copy"><span class="lp-track-title">${esc(t.title)}</span><small>${esc(t.artist)} · ${esc(t.genre)}</small></span><span class="lp-duration">${Math.floor(t.seconds/60)}:${String(t.seconds%60).padStart(2,'0')}</span></div>`).join('')}
+function preview(isSaved=false){const r=isSaved&&saved?saved.result:results();setHeader(isSaved?'Your playlist':'Matching songs',state.mode==='live'?'Live':'Snapshot');$('.lp-main').innerHTML=`${isSaved&&saveNotice?`<div class="lp-saved-mark">${icon('check')}Saved in this mock</div>`:''}<p class="lp-kicker">${isSaved?esc(state.name):'Playlist preview'}</p><div class="lp-preview-title">${r.tracks.length} songs <span style="font-size:16px;color:var(--lp-muted)">· ${duration(r.seconds)}</span></div><p class="lp-help">Sample library · ${tracks.length} songs${!isSaved?` · ${r.matched} match before removing duplicates`:''}</p><div class="lp-recipe"><div class="lp-kicker">Matching ${state.rule.mode==='all'?'all':'any'} of these</div>${state.rule.children.map(c=>esc(recipe(c))).join(`<br><span style="font-size:10px;color:var(--lp-muted)">${state.rule.mode==='all'?'AND':'OR'}</span><br>`)||'All songs'}<div class="lp-help">${esc(settingsSummary())}</div></div>${r.tracks.length?trackList(r.tracks):`<div class="lp-empty">${icon('list-filter')}<h2>No songs match yet</h2><p class="lp-caption">Try changing a value or switching a group to ANY.</p></div>`}`;$('.lp-footer').innerHTML=button(isSaved?'edit-saved':'back',isSaved?icon('sliders-horizontal')+'Edit rules':'Back to rules','lp-primary')}
+function library(){setHeader('Playlists');$('.lp-header .lp-icon').remove();$('.lp-main').innerHTML=`${saved?button('open-saved',`${icon('list-filter')}<span>${esc(saved.state.name)}<span class="lp-sub">${saved.result.tracks.length} songs · ${saved.state.mode==='live'?'Live':'Snapshot'}</span></span>${icon('chevron-right')}`,'lp-library-item'):''}<div class="lp-draft"><span class="lp-kicker">Draft kept</span><div>${esc(state.name)||'Untitled playlist'}</div>${button('resume','Continue editing '+icon('arrow-right'))}</div>${['Favorites','On repeat','Recently added'].map(p=>`<div class="lp-track"><span class="lp-art">${icon('list-music')}</span><span class="lp-track-copy">${p}<span class="lp-sub">${tracks.filter(t=>t.playlist.includes(p)).length} songs · File playlist</span></span></div>`).join('')}`;$('.lp-footer').innerHTML='<p class="lp-help" style="text-align:center;margin:0">Interactive mock · changes reset on reload</p>'}
+function icons(){if(globalThis.lucide)globalThis.lucide.createIcons({attrs:{width:21,height:21}})}
+function render(){if(screen==='builder')builder();else if(screen==='editor')editor();else if(screen==='group')groupScreen();else if(screen==='preview')preview();else if(screen==='saved')preview(true);else library();root.style.setProperty('--lp-row-padding',tweaks.dense?'8px':'11px');root.querySelectorAll('.lp-rule>button').forEach(e=>{if(tweaks.dense)e.style.minHeight='54px'});icons()}
+function go(next){stack.push({screen,groupId});screen=next;render()}
+function goBack(){const previous=stack.pop();if(previous){screen=previous.screen;groupId=previous.groupId}else screen='library';edit=null;render()}
+function error(msg){const e=$('.lp-error');e.hidden=false;e.textContent=msg}
+function makeEdit(parent,node=null){edit={parent:Number(parent),isNew:!node,node:node?structuredClone(node):{id:++seq,type:'rule',field:'artist',op:'is',value:''}};go('editor')}
+root.addEventListener('click',event=>{const b=event.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,id=Number(b.dataset.id);if(a==='back'){goBack();return}if(a==='resume'){stack=[];screen='builder';render();return}if(a==='mode'){state.mode=b.dataset.mode;render();return}if(a==='preview'){go('preview');return}if(a==='edit'){let parent=0;const scan=n=>{if(n.children?.some(c=>c.id===id))parent=n.id;(n.children||[]).forEach(scan)};scan(state.rule);makeEdit(parent,find(id));return}if(a==='add-rule'){makeEdit(id);return}if(a==='add-group'){const n={id:++seq,type:'group',mode:'any',children:[]};find(id).children.push(n);stack.push({screen,groupId});groupId=n.id;screen='group';render();return}if(a==='open-group'){stack.push({screen,groupId});groupId=id;screen='group';render();return}if(a==='delete-group'){remove(groupId);goBack();return}if(a==='delete-rule'){remove(edit.node.id);goBack();return}if(a==='apply-rule'){const n=edit.node;if(n.op==='any'&&!n.values?.length)return error('Choose at least one value.');if(n.op!=='missing'&&!String(n.value).trim())return error('Enter a value for this rule.');if(fields[n.field].kind==='number'){const v=Number(n.value);if(!Number.isFinite(v)||v<0)return error('Enter a number that is zero or greater.');if(n.field==='rating'&&v>5)return error('Choose a rating from 0 to 5.');if(n.op==='between'&&(!String(n.value2??'').trim()||!Number.isFinite(Number(n.value2))||Number(n.value2)<v))return error('The upper value must be at least the lower value.');if(n.field==='rating'&&n.op==='between'&&Number(n.value2)>5)return error('Choose a rating from 0 to 5.')}if(edit.isNew)find(edit.parent).children.push(structuredClone(n));else Object.assign(find(n.id),n);goBack();return}if(a==='save'){if(!state.name.trim())return error('Give your playlist a name.');state.name=state.name.trim();saved={state:structuredClone(state),result:structuredClone(results())};saveNotice=true;stack=[{screen:'library',groupId:0}];screen='saved';render();return}if(a==='edit-saved'){state=structuredClone(saved.state);stack=[];screen='builder';render();return}if(a==='open-saved'){state=structuredClone(saved.state);saveNotice=false;go('saved');return}});
+root.addEventListener('input',event=>{const e=event.target;if(e.matches('.lp-name'))state.name=e.value;if(e.dataset.edit&&['value','value2'].includes(e.dataset.edit)){edit.node[e.dataset.edit]=e.value;$('.lp-read-text').textContent=ruleText(edit.node);$('.lp-edit-count').textContent=`${tracks.filter(t=>evalNode(edit.node,t)).length} of ${tracks.length} sample songs match this rule alone.`}});
+root.addEventListener('change',event=>{const e=event.target;if(e.dataset.logic!==undefined){find(e.dataset.logic).mode=e.value;render();return}if(e.dataset.setting){let value=e.type==='checkbox'?e.checked:e.value;state[e.dataset.setting]=value;render();return}if(e.dataset.edit){const k=e.dataset.edit;edit.node[k]=e.value;if(k==='field'){edit.node.op=ops[fields[e.value].kind][0][0];edit.node.value=e.value==='playlist'?'Favorites':fields[e.value].kind==='number'?'5':'';delete edit.node.value2}if(k==='op'&&e.value==='between')edit.node.value2=edit.node.value;if(k==='field'||k==='op'){editor();icons()}else if($('.lp-read-text'))$('.lp-read-text').textContent=ruleText(edit.node)}});
+const overlay=document.createElement('div');overlay.className='lp-overlay';overlay.hidden=true;$('.lp-phone').append(overlay);
+let picker=null,pickerTimer=null,pickerFrame=null;
+const fieldCache=new Map(),collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
+const fold=s=>String(s??'').normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase().trim();
+const sortKey=s=>fold(s).replace(/^[^\p{L}\p{N}]+/u,'');
+const letter=s=>{const c=sortKey(s).charAt(0).toLocaleUpperCase();return /\p{L}/u.test(c)?c:'#'};
+function indexedValues(field){
+ if(fieldCache.has(field))return fieldCache.get(field);
+ const map=new Map();
+ for(const t of tracks)for(const value of Array.isArray(t[field])?t[field]:[t[field]]){
+  if(value===undefined||value===null||value==='')continue;
+  const key=fold(value);let entry=map.get(key);
+  if(!entry){entry={value:String(value),key,sort:sortKey(value),count:0};map.set(key,entry)}entry.count++;
+ }
+ const list=[...map.values()].sort((a,b)=>collator.compare(a.sort,b.sort));fieldCache.set(field,list);return list;
+}
+function openPicker(){
+ const n=edit.node;picker={field:n.field,multiple:n.op==='any',selected:new Set(n.op==='any'?n.values||[]:n.value?[n.value]:[]),all:indexedValues(n.field),items:[],sections:[],query:'',start:-1,end:-1,drag:null};
+ for(const el of $('.lp-phone').children)if(el!==overlay)el.inert=true;
+ overlay.hidden=false;const noun={playlist:'playlist',artist:'artist',genre:'genre',title:'song title'}[n.field];
+ overlay.innerHTML=`<div class="lp-dialog" role="dialog" aria-modal="true" aria-labelledby="lp-picker-title"><div class="lp-dialog-head"><h2 id="lp-picker-title">Choose ${noun}${picker.multiple?'s':''}</h2><button type="button" class="lp-icon" data-pick-act="cancel" aria-label="Close value picker">${icon('x')}</button></div><div class="lp-picker-meta"><span class="lp-picker-total" aria-live="polite"></span><span class="lp-picker-selection" aria-live="polite"></span></div><div class="lp-picker-body"><div class="lp-picker-viewport" role="region" aria-label="Available values"><div class="lp-picker-spacer"></div></div><div class="lp-fast"><div class="lp-fast-rail"><div class="lp-fast-thumb"></div></div><input type="range" min="0" max="1" step="1" value="0" aria-label="Fast scroll by letter"><span class="lp-letter-bubble" hidden></span></div></div><div class="lp-picker-search">${icon('search')}<input type="text" aria-label="Search values" placeholder="Search ${noun}${n.field==='title'?'s':'s'}…" autocomplete="off" spellcheck="false"><button type="button" data-pick-act="clear" aria-label="Clear value search">${icon('x')}</button></div><div class="lp-picker-foot"><button type="button" data-pick-act="cancel">Cancel</button><button type="button" class="lp-primary" data-pick-act="apply">Use selection</button></div></div>`;
+ $('.lp-picker-viewport').addEventListener('scroll',()=>{if(pickerFrame!==null)return;pickerFrame=requestAnimationFrame(()=>{pickerFrame=null;if(picker)drawPicker()})});
+ const range=$('.lp-fast input');
+ range.addEventListener('pointerdown',e=>{if(range.disabled)return;e.preventDefault();range.setPointerCapture(e.pointerId);picker.drag=Number(range.value);$('.lp-fast').classList.add('lp-dragging');moveLetter(e)});
+ range.addEventListener('pointermove',e=>{if(picker?.drag!==null)moveLetter(e)});
+ range.addEventListener('pointerup',()=>endLetter(false));range.addEventListener('pointercancel',()=>endLetter(true));
+ range.addEventListener('input',()=>{if(picker&&picker.drag===null)jumpLetter(Number(range.value))});
+ filterPicker();updatePickerSelection();icons();$('.lp-dialog [data-pick-act=cancel]').focus();
+}
+function closePicker(apply=false){
+ if(!picker)return;
+ if(apply){if(!picker.selected.size)return;edit.node.value=[...picker.selected].join(', ');if(picker.multiple)edit.node.values=[...picker.selected];else delete edit.node.values}
+ clearTimeout(pickerTimer);if(pickerFrame!==null)cancelAnimationFrame(pickerFrame);pickerFrame=null;
+ picker=null;overlay.hidden=true;overlay.innerHTML='';for(const el of $('.lp-phone').children)el.inert=false;
+ editor();icons();$('[data-pick-act=open]')?.focus();
+}
+function filterPicker(){
+ if(!picker)return;const needle=fold(picker.query);
+ picker.items=needle?picker.all.filter(x=>x.key.includes(needle)):picker.all;picker.sections=[];
+ picker.items.forEach((item,index)=>{const label=letter(item.value);if(picker.sections.at(-1)?.label!==label)picker.sections.push({label,index})});
+ $('.lp-picker-total').textContent=`${picker.items.length.toLocaleString()} ${picker.items.length===1?'value':'values'} · ${needle?'search results':'A–Z'}`;
+ const range=$('.lp-fast input');range.max=Math.max(0,picker.sections.length-1);range.disabled=picker.sections.length<2;range.value=0;
+ $('.lp-fast').hidden=picker.sections.length<2;
+ $('.lp-picker-viewport').scrollTop=0;picker.start=-1;drawPicker(true);
+}
+function drawPicker(force=false){
+ if(!picker)return;const vp=$('.lp-picker-viewport'),spacer=$('.lp-picker-spacer'),height=58;
+ const start=Math.max(0,Math.floor(vp.scrollTop/height)-2),end=Math.min(picker.items.length,Math.ceil((vp.scrollTop+vp.clientHeight)/height)+2);
+ spacer.style.height=`${Math.max(picker.items.length*height,picker.items.length?0:200)}px`;
+ if(force||start!==picker.start||end!==picker.end){
+  const focusIndex=document.activeElement?.dataset.pickIndex;
+  picker.start=start;picker.end=end;
+  spacer.innerHTML=picker.items.length?picker.items.slice(start,end).map((item,i)=>`<button type="button" class="lp-picker-row" data-pick-index="${start+i}" aria-label="${esc(item.value)}" aria-pressed="${picker.selected.has(item.value)}" style="top:${(start+i)*height}px"><span><span class="lp-picker-name">${esc(item.value)}</span><span class="lp-picker-description">${item.count.toLocaleString()} ${item.count===1?'song':'songs'}</span></span>${picker.selected.has(item.value)?icon('check'):''}</button>`).join(''):'<div class="lp-picker-empty">No matching values.<br>Try a different search.</div>';
+  icons();if(focusIndex!==undefined)$(`[data-pick-index="${focusIndex}"]`)?.focus({preventScroll:true});
+ }
+ if(picker.drag===null){const top=Math.floor(vp.scrollTop/height);let section=0;for(let i=0;i<picker.sections.length;i++){if(picker.sections[i].index>top)break;section=i}const range=$('.lp-fast input');range.value=section;range.setAttribute('aria-valuetext',picker.sections[section]?.label||'No values');const max=vp.scrollHeight-vp.clientHeight;$('.lp-fast-thumb').style.top=`${max>0?vp.scrollTop/max*($('.lp-fast').clientHeight-24):0}px`}
+}
+function updatePickerSelection(){
+ $('.lp-picker-selection').textContent=`${picker.selected.size} selected`;
+ const apply=$('[data-pick-act=apply]');apply.disabled=!picker.selected.size;apply.textContent=picker.multiple?`Use ${picker.selected.size} values`:'Use selection';
+}
+function moveLetter(event){
+ if(!picker||!picker.sections.length)return;
+ const rect=$('.lp-fast').getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)),index=Math.min(picker.sections.length-1,Math.floor(fraction*picker.sections.length));picker.drag=index;
+ const bubble=$('.lp-letter-bubble');bubble.hidden=false;bubble.textContent=picker.sections[index].label;bubble.style.top=`${Math.max(0,Math.min(rect.height-52,event.clientY-rect.top-26))}px`;
+ $('.lp-fast-thumb').style.top=`${fraction*(rect.height-24)}px`;$('.lp-fast input').value=index;$('.lp-fast input').setAttribute('aria-valuetext',picker.sections[index].label);
+}
+function jumpLetter(index){if(!picker?.sections[index])return;$('.lp-picker-viewport').scrollTop=picker.sections[index].index*58;drawPicker(true)}
+function endLetter(cancel){if(!picker||picker.drag===null)return;const index=picker.drag;picker.drag=null;$('.lp-fast').classList.remove('lp-dragging');$('.lp-letter-bubble').hidden=true;if(!cancel)jumpLetter(index);else drawPicker()}
+root.addEventListener('click',event=>{
+ const option=event.target.closest('[data-pick-index]');
+ if(option&&picker){const entry=picker.items[Number(option.dataset.pickIndex)];if(picker.multiple){picker.selected.has(entry.value)?picker.selected.delete(entry.value):picker.selected.add(entry.value)}else picker.selected=new Set([entry.value]);drawPicker(true);updatePickerSelection();return}
+ const action=event.target.closest('[data-pick-act]')?.dataset.pickAct;
+ if(action==='open')openPicker();else if(action==='cancel')closePicker();else if(action==='apply')closePicker(true);else if(action==='clear'){clearTimeout(pickerTimer);picker.query='';$('.lp-picker-search input').value='';filterPicker();$('.lp-picker-search input').focus()}
+});
+root.addEventListener('input',event=>{if(event.target.matches('.lp-picker-search input')){picker.query=event.target.value;clearTimeout(pickerTimer);pickerTimer=setTimeout(filterPicker,100)}});
+root.addEventListener('change',event=>{if(event.target.dataset.edit==='field')delete edit.node.values;if(event.target.dataset.edit==='op'){if(event.target.value==='any')edit.node.values=edit.node.value?[edit.node.value]:[];else{if(edit.node.values)edit.node.value=edit.node.values[0]||'';delete edit.node.values}}},true);
+root.addEventListener('keydown',event=>{
+ if(!picker)return;
+ if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closePicker();return}
+ if(event.key==='Tab'){const focusable=[...overlay.querySelectorAll('button:not(:disabled),input:not(:disabled)')].filter(e=>e.getClientRects().length&&!e.closest('[hidden]')),first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}return}
+ const index=event.target.dataset.pickIndex;if(index===undefined||!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+ event.preventDefault();const next=Math.max(0,Math.min(picker.items.length-1,event.key==='Home'?0:event.key==='End'?picker.items.length-1:Number(index)+(event.key==='ArrowDown'?1:-1)));
+ const vp=$('.lp-picker-viewport');if(next*58<vp.scrollTop)vp.scrollTop=next*58;else if((next+1)*58>vp.scrollTop+vp.clientHeight)vp.scrollTop=(next+1)*58-vp.clientHeight;drawPicker(true);$(`[data-pick-index="${next}"]`)?.focus({preventScroll:true});
+});
+
+render();
+if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addSelect(tweaks,'logicWords',{label:'Logic labels',options:['ALL / ANY','Every rule / Any rule']});tweak.addToggle(tweaks,'dense',{label:'Compact rule rows'})}
+})();
+</script>

@@ -92,3 +92,7 @@ No keyguard bypass or connectedDebugAndroidTest lifecycle was used. The followin
 - Tag/file write-consent flows, failure recovery, and format validation using disposable device fixtures before recommending use on valuable music files. Broader tag formats and embedded lyrics outside supported MP3 tags require additional support.
 
 Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Test APK: `app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`.
+
+## Dedicated playlist builder
+
+The rules modal has been replaced by the approved native builder. See [the builder implementation and verification notes](playlist-builder.md) for the current controls, metadata rules, large-library value picker, compatibility behavior, and Samsung installation results.

@@ -88,9 +88,9 @@ class PlayerPolishTest {
         compose.onNodeWithContentDescription("Playlists").performClick()
         compose.onNodeWithContentDescription("Create playlist").performClick()
         compose.onNodeWithText("New playlist from rules").performClick()
-        compose.onNodeWithText("Create from rules").assertIsDisplayed()
-        compose.onNodeWithText("Match all").assertIsDisplayed()
-        compose.onNodeWithText("Match any").assertIsDisplayed()
+        compose.onNodeWithText("Playlist builder").assertIsDisplayed()
+        compose.onNodeWithText("ALL").assertIsDisplayed()
+        compose.onNodeWithText("Don't add duplicate songs").assertIsDisplayed()
     }
 
     private fun beginMembershipWrite(deferClear: Boolean = false): MutableState<LibraryBrowserState> {

@@ -133,7 +133,7 @@ data class LibraryBrowserActions(
     val applyMembership: (BatchAction, List<PlaylistDocument>, List<LibraryTrack>) -> Unit = { _, _, _ -> },
     val confirmMutation: () -> Unit = {},
     val createPlaylist: (String, List<LibraryTrack>) -> Unit = { _, _ -> },
-    val createNestedPlaylist: (String, io.github.shmemcat.shmemplay.domain.PlaylistRuleNode, Boolean, String?) -> Unit = { _, _, _, _ -> },
+    val createNestedPlaylist: (String, io.github.shmemcat.shmemplay.domain.PlaylistRuleNode, Boolean, String?, Boolean) -> Unit = { _, _, _, _, _ -> },
     val createRulePlaylist: (String, RecipeMatch, List<PlaylistRule>) -> Unit = { _, _, _ -> },
     val rerunRecipe: (SavedPlaylistRecipe) -> Unit = {},
     val renamePlaylist: (PlaylistDocument, String) -> Unit = { _, _ -> },
@@ -174,13 +174,25 @@ fun LibraryBrowserApp(
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showRules by rememberSaveable { mutableStateOf(false) }
     var showNewPlaylist by rememberSaveable { mutableStateOf(false) }
-    var editingRecipe by remember { mutableStateOf<io.github.shmemcat.shmemplay.playlists.LocalPlaylistRecipe?>(null) }
+    var editingRecipeId by rememberSaveable { mutableStateOf<String?>(null) }
+    var builderDraft by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingRecipe = state.localRecipes.firstOrNull { it.id == editingRecipeId }
     var playlistFilter by rememberSaveable { mutableStateOf("All") }
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var optionsExpanded by rememberSaveable { mutableStateOf(false) }
     var playlistMenuExpanded by rememberSaveable { mutableStateOf(false) }
     var renameDocumentUri by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteDocumentUri by rememberSaveable { mutableStateOf<String?>(null) }
+
+    if (showRules) {
+        PlaylistBuilderScreen(state, actions, editingRecipe, builderDraft,
+            onDraftChange = { builderDraft = it }, onDismiss = { showRules = false },
+            onSaved = {
+                showRules = false; builderDraft = null; editingRecipeId = null
+                sectionName = BrowserSection.PLAYLISTS.name; detailKind = null; detailKey = null
+            })
+        return
+    }
 
     val section = BrowserSection.valueOf(sectionName)
     val playerSection = section == BrowserSection.QUEUES || section == BrowserSection.NOW_PLAYING
@@ -283,7 +295,11 @@ fun LibraryBrowserApp(
                 playlist = openPlaylist,
                 playlistMenuExpanded = playlistMenuExpanded,
                 onPlaylistMenuExpanded = { playlistMenuExpanded = it },
-                onRules = { editingRecipe = openPlaylist?.takeIf { it.live }?.let { snapshot -> state.localRecipes.firstOrNull { it.id == snapshot.document.uri.schemeSpecificPart } }; showRules = true },
+                onRules = {
+                    val id = openPlaylist?.takeIf { it.live }?.document?.uri?.schemeSpecificPart
+                    if (editingRecipeId != id) builderDraft = null
+                    editingRecipeId = id; actions.clearMutationMessage(); showRules = true
+                },
                 showRules = section == BrowserSection.PLAYLISTS && detail == null,
                 onNewPlaylist = { showNewPlaylist = true },
                 canShufflePlaylist = playerRepository != null && openPlaylist?.sourceError == null && openPlaylist?.entries?.any { it.track != null } == true,
@@ -451,9 +467,6 @@ fun LibraryBrowserApp(
         title = { Text("Player") }, text = { Text(playerState.error) }, confirmButton = { TextButton(onClick = { playerRepository?.clearError() }) { Text("OK") } })
     if (showSettings) {
         SettingsSheet(state, actions, onDismiss = { showSettings = false })
-    }
-    if (showRules) {
-        NestedRulesDialog(state, actions, onDismiss = { showRules = false }, initial = editingRecipe)
     }
     renameDocumentUri?.let { uri ->
         val document = state.browserPlaylists.firstOrNull { it.document.uri.toString() == uri }?.document
@@ -686,10 +699,11 @@ internal fun FastScrollableLazyColumn(
     itemCount: Int,
     bucketLabels: List<String>?,
     liveDrag: Boolean,
+    precomputedTargets: List<FastScrollTarget>? = null,
     content: LazyListScope.() -> Unit,
 ) {
-    val targets = remember(bucketLabels) {
-        bucketLabels?.let(FastScrollIndex::targets).orEmpty()
+    val targets = remember(bucketLabels, precomputedTargets) {
+        precomputedTargets ?: bucketLabels?.let(FastScrollIndex::targets).orEmpty()
     }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
