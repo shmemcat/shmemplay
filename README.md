@@ -1,5 +1,7 @@
 # shmemplay
 
+For the approved player build, start with [the development handoff](docs/START-HERE.md).
+
 shmemplay (formerly Shmemplaylist) is a native Android music browser and M3U/M3U8 playlist editor
 for a library played in GoneMAD Music Player. Launch it to browse songs,
 albums, artists, genres, and playlists with artwork, resilient search, an

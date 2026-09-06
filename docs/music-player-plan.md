@@ -1,5 +1,7 @@
 # shmemplay — music player interaction specification
 
+Implementation entry point: [START-HERE.md](START-HERE.md). The approved mock and screenshots are preserved in [prototype/README.md](prototype/README.md).
+
 Status: proposed next development phase, September 5, 2026. This document captures the user's Musicolet references and requested behavior. It does not describe playback as already implemented. The screenshots are preserved unmodified in [player-references](player-references/).
 
 This extends the [2.0 browser plan](browser-2-plan.md). For the player phase it supersedes that plan's no-playback restriction, single-action song popup, incoming-share entry point, five-destination navigation, and snapshot-only recipe creation. Existing direct M3U editing, selection, search normalization, dark purple appearance, compact lists, and fast scrolling remain foundations.
@@ -36,6 +38,14 @@ The user explicitly approved the playlist membership editor as an in-app modal, 
 One persistent search query follows the user through All Songs, Albums, Artists, Genres, Playlists, and their detail views. Each view applies it to its own list, and the search field retains the text until the user clears it with X. Switching categories or opening Settings must not clear the query. Settings retains its own controls rather than filtering them with the music query. Now Playing and Queues do not apply the shared library query; returning to the library restores it. Queues have their own local search. Existing advanced selection remains scoped to the visible filtered list.
 
 Preserve the current membership editor's ordering: playlists containing **all** selected songs appear first and are bold. Playlists containing only some selected songs follow without bold emphasis, then playlists containing none; alphabetize names within each group. For a single selected song, every containing playlist is bold and at the top. Recompute membership after successful changes, and add only missing songs without introducing duplicates.
+
+## Existing browser behavior to preserve
+
+Keep simple category icons without album art in Artists, Genres, and Playlists; artwork belongs in song rows and album views. Show category totals (songs, albums, artists, genres, playlists) and total music hours in All Songs. Preserve the small gap above the first row, dense readable row padding, top system-bar clearance, keyboard resizing instead of panning, and the small search-to-keyboard gap.
+
+Keep the bottom navigation stable through parent/detail navigation, including playlist contents, with the existing keyboard-visible exception. Restore a category's list offset when backing out of its detail view; switching categories is a separate navigation action. Settings remains a scrollable popup with stable bounds and contained scrolling, avoiding the earlier top-edge flicker.
+
+Selection starts only after long-press. Its bar disappears and its popup closes when the global selection becomes empty. Advanced actions modify the filtered current list only; selections elsewhere are preserved. Disable an unavailable range action without adding the rejected explanatory helper sentence. Preserve the existing dynamic script-aware fast scrollbar, press-and-drag activation, equal-width resting thumb/rail with outer padding, alphabetical preview-then-jump behavior, and continuous scrolling inside playlist/queue views. The mock's simplified script labels do not narrow native language support.
 
 ## Now Playing
 
