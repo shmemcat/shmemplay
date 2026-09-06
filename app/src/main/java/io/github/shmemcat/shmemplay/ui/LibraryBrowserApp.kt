@@ -272,7 +272,7 @@ fun LibraryBrowserApp(
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).imePadding(),
         topBar = {
             BrowserTopBar(
-                title = if (playerSection) section.label else detailTitle(detail, state) ?: "shmemplay",
+                title = if (playerSection) section.label else detailTitle(detail, state) ?: section.label,
                 stats = if (playerSection) "" else headerStats,
                 canGoBack = detail != null,
                 onBack = {
