@@ -18,10 +18,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -162,6 +165,7 @@ fun LibraryBrowserApp(
     val playlistsScrollState = rememberLazyListState()
     val detailScrollState = remember(detail?.kind, detail?.key) { LazyListState() }
     val scrollScope = rememberCoroutineScope()
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     fun rootScrollState(destination: BrowserSection): LazyListState = when (destination) {
         BrowserSection.SONGS -> songsScrollState
         BrowserSection.ALBUMS -> albumsScrollState
@@ -196,6 +200,14 @@ fun LibraryBrowserApp(
         selectedIds = selectedIds.filter { it in available }
         editorTrackIds = editorTrackIds.filter { it in available }
     }
+    LaunchedEffect(query) {
+        songsScrollState.scrollToItem(0)
+        albumsScrollState.scrollToItem(0)
+        artistsScrollState.scrollToItem(0)
+        genresScrollState.scrollToItem(0)
+        playlistsScrollState.scrollToItem(0)
+        detailScrollState.scrollToItem(0)
+    }
     LaunchedEffect(selectedIds) {
         if (selectedIds.isEmpty()) {
             advancedExpanded = false
@@ -226,6 +238,7 @@ fun LibraryBrowserApp(
     }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             BrowserTopBar(
                 title = detailTitle(detail, state) ?: "Shmemplaylist",
@@ -294,21 +307,25 @@ fun LibraryBrowserApp(
                     )
                 }
                 SearchBar(query = query, onQueryChange = { query = it }, onClear = { query = "" })
-                NavigationBar {
-                    BrowserSection.entries.forEach { destination ->
-                        NavigationBarItem(
-                            selected = section == destination,
-                            onClick = {
-                                if (section != destination) {
-                                    scrollScope.launch { rootScrollState(destination).scrollToItem(0) }
-                                }
-                                sectionName = destination.name
-                                detailKind = null
-                                detailKey = null
-                            },
-                            icon = { Text(destination.glyph, fontSize = 26.sp, fontWeight = FontWeight.Bold) },
-                            label = { Text(destination.label) },
-                        )
+                if (keyboardVisible) {
+                    Spacer(Modifier.height(6.dp))
+                } else {
+                    NavigationBar {
+                        BrowserSection.entries.forEach { destination ->
+                            NavigationBarItem(
+                                selected = section == destination,
+                                onClick = {
+                                    if (section != destination) {
+                                        scrollScope.launch { rootScrollState(destination).scrollToItem(0) }
+                                    }
+                                    sectionName = destination.name
+                                    detailKind = null
+                                    detailKey = null
+                                },
+                                icon = { Text(destination.glyph, fontSize = 26.sp, fontWeight = FontWeight.Bold) },
+                                label = { Text(destination.label) },
+                            )
+                        }
                     }
                 }
             }
@@ -571,7 +588,7 @@ private fun FastScrollableLazyColumn(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(end = 20.dp),
+            contentPadding = PaddingValues(top = 6.dp, end = 20.dp),
             content = content,
         )
         FastScrollbar(
