@@ -1384,7 +1384,7 @@ private fun MembershipEditor(
                     }
                 }
                 if (memberships.isEmpty()) item { Text("No playlists match this view.") }
-                item {
+                if (tab == 0) item {
                     TextButton(enabled = !submitted, onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
                         Text("＋ Create new playlist")
                     }
