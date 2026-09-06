@@ -80,7 +80,7 @@ fun ShmemplaylistApp(
                 TopAppBar(
                     title = {
                         Text(
-                            "Shmemplaylist",
+                            "shmemplay",
                             modifier = Modifier.semantics { testTag = "app-title" },
                         )
                     },
@@ -219,7 +219,7 @@ fun ShmemplaylistApp(
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            "Shmemplaylist needs audio-library access to match GoneMAD's " +
+                            "shmemplay needs audio-library access to match GoneMAD's " +
                                 "temporary share to exactly one Android track.",
                         )
                         Button(onClick = onRequestPermission) {
@@ -529,7 +529,7 @@ private fun GlobalConfirmationDialog(
                     GlobalConfirmation.ProviderTest ->
                         "A uniquely named disposable file will be created, verified, and removed."
                     GlobalConfirmation.ForgetFolder ->
-                        "Shmemplaylist will release its saved access. Your playlists will not be deleted."
+                        "shmemplay will release its saved access. Your playlists will not be deleted."
                 },
             )
         },

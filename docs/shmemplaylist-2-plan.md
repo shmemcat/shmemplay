@@ -1,5 +1,7 @@
 # Shmemplaylist 2.0 — product proposal
 
+The proposed player expansion is specified in [music-player-plan.md](music-player-plan.md), including the user's Musicolet screenshots, independent snapshot queues, playback controls, live playlists, and headset settings. Its explicit changes supersede the browser-only restrictions below for that future phase; they are not yet implemented playback features.
+
 Draft for discussion, September 5, 2026. Scope: a native Android music browser and playlist editor, with no playback. The interactive mock uses fictional metadata and session-only playlist changes; it does not read or write phone files.
 
 Confirmed preferences: fixed snapshot playlists with explicit recipe reruns; edit the same playlist files GoneMAD reads; always use the dark Material 3 theme with the existing purple. Outgoing file sharing is removed from scope: Shmemplaylist receives shares from GoneMAD.

@@ -241,7 +241,7 @@ fun LibraryBrowserApp(
         modifier = Modifier.imePadding(),
         topBar = {
             BrowserTopBar(
-                title = detailTitle(detail, state) ?: "Shmemplaylist",
+                title = detailTitle(detail, state) ?: "shmemplay",
                 stats = headerStats,
                 canGoBack = detail != null,
                 onBack = {
@@ -1471,7 +1471,7 @@ private fun MutationDialogs(state: LibraryBrowserState, actions: LibraryBrowserA
         verticalArrangement = Arrangement.Center,
     ) {
         Text("Audio access required", style = MaterialTheme.typography.titleLarge)
-        Text("Allow access so Shmemplaylist can browse music stored on this phone.")
+        Text("Allow access so shmemplay can browse music stored on this phone.")
         Button(onClick = onRequest, modifier = Modifier.padding(top = 12.dp)) { Text("Allow audio access") }
     }
 }

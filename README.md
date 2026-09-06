@@ -1,10 +1,12 @@
-# Shmemplaylist
+# shmemplay
 
-Shmemplaylist is a native Android music browser and M3U/M3U8 playlist editor
+shmemplay (formerly Shmemplaylist) is a native Android music browser and M3U/M3U8 playlist editor
 for a library played in GoneMAD Music Player. Launch it to browse songs,
 albums, artists, genres, and playlists with artwork, resilient search, an
-always-dark purple theme, and Musicolet-style bulk selection. Sharing a playing file from GoneMAD still opens
-the focused membership editor. GoneMAD remains the music player.
+always-dark purple theme, and Musicolet-style bulk selection. The membership
+editor opens within the browser; the app no longer registers as an incoming
+audio-share destination. Native playback is planned in the
+[shmemplay player specification](docs/music-player-plan.md).
 
 > **Safety status:** Phase 7 enables real multi-playlist writes only after the
 > user deliberately enables them and the app verifies the safety prerequisites

@@ -246,7 +246,7 @@ class MainActivity : ComponentActivity() {
             Intent.createChooser(
                 Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Shmemplaylist redacted intake diagnostic")
+                    putExtra(Intent.EXTRA_SUBJECT, "shmemplay redacted intake diagnostic")
                     putExtra(Intent.EXTRA_TEXT, text)
                 },
                 "Export redacted diagnostics",

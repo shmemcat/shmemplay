@@ -21,7 +21,7 @@ object DiagnosticReportFormatter {
         uri: UriEvidence,
     ): DiagnosticReport {
         val report = buildString {
-            appendLine("Shmemplaylist GoneMAD intake diagnostic v1")
+            appendLine("shmemplay GoneMAD intake diagnostic v1")
             appendLine("redaction: required")
             appendLine("delivery: ${deliveryKind.name.lowercase()}")
             appendLine("action: ${intent.action.safeValue()}")

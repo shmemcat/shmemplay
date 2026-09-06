@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 96 96" role="img" aria-labelledby="icon-title">
+  <title id="icon-title">shmemplay purple record icon</title>
+  <path d="M48 7C70.7 7 89 25.3 89 48C89 70.7 70.7 89 48 89C25.3 89 7 70.7 7 48C7 25.3 25.3 7 48 7Z" fill="#B7A1EE" stroke="#4B4858" stroke-width="6.5"/>
+  <path d="M23 45C24.5 32.9 32.9 24.2 43.5 22.8M73 51C71.7 62.8 63.2 71.6 52.5 73.1" fill="none" stroke="#4B4858" stroke-width="6.2" stroke-linecap="round"/>
+  <circle cx="52.5" cy="22.5" r="3.1" fill="#4B4858"/>
+  <circle cx="43.5" cy="73.5" r="3.1" fill="#4B4858"/>
+  <circle cx="48" cy="48" r="11.5" fill="#F5CA69" stroke="#4B4858" stroke-width="6.2"/>
+</svg>
