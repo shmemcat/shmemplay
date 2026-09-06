@@ -518,13 +518,13 @@ private fun BrowserTopBar(
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(start = 16.dp, end = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(start = if (canGoBack) 0.dp else 16.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 if (canGoBack) {
-                    TextButton(onClick = onBack) { PlayerIcon(R.drawable.ic_chevron_down, "Back", Modifier.size(25.dp).rotate(90f)) }
+                    BackChevronButton(onClick = onBack)
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -1320,12 +1320,12 @@ private fun MembershipEditor(
         topBar = {
             Surface(tonalElevation = 2.dp) {
                 Row(
-                    Modifier.fillMaxWidth().height(60.dp).padding(start = 4.dp, end = 34.dp),
+                    Modifier.fillMaxWidth().height(60.dp).padding(end = 34.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = onBack, enabled = !submitted) { PlayerIcon(R.drawable.ic_chevron_down, "Back", Modifier.size(25.dp).rotate(90f)) }
+                        BackChevronButton(onClick = onBack, enabled = !submitted)
                         Text("Playlists", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                     Text("${tracks.size} selected", style = MaterialTheme.typography.bodySmall)

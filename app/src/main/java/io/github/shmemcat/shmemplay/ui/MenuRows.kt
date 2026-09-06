@@ -1,6 +1,9 @@
 package io.github.shmemcat.shmemplay.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -38,5 +41,20 @@ import androidx.compose.ui.unit.dp
         verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+
+/** Every header uses the same 12 dp gutter on both sides of the circular target. */
+@Composable internal fun BackChevronButton(onClick: () -> Unit, enabled: Boolean = true) {
+    Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides LocalContentColor.current.copy(alpha = if (enabled) 1f else .38f)) {
+                PlayerIcon(io.github.shmemcat.shmemplay.R.drawable.ic_chevron_down, "Back", Modifier.size(25.dp).rotate(90f))
+            }
+        }
     }
 }
