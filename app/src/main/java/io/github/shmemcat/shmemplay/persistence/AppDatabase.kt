@@ -29,7 +29,7 @@ abstract class AppDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    // Existing installs already store aliases and operation journals here.
+                    // This filename is a persistence key; changing it would disconnect aliases and recovery journals.
                     "shmemplaylist.db",
                 ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()

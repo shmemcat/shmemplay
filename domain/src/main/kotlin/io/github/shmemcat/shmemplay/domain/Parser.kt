@@ -63,9 +63,7 @@ object M3uParserV1 {
         preserveExtendedInfo: Boolean = true,
     ): ParseResult = parse(ByteArrayInputStream(bytes), displayName, limits, preserveExtendedInfo)
 
-    /**
-     * Reads from the stream's current position and deliberately leaves the caller-owned stream open.
-     */
+    /** Stream lifetime belongs to the caller, so parsing must not close it. */
     fun parse(
         input: InputStream,
         displayName: String,

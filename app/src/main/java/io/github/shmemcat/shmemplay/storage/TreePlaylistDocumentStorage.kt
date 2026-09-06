@@ -22,10 +22,7 @@ interface PlaylistDocumentStorage {
     fun overwriteExact(bytes: ByteArray)
 }
 
-/**
- * Opens only a document discovered beneath the currently granted tree and revalidates its
- * provider identity and display name before every read or write.
- */
+/** Revalidate on each access because a provider document can change after discovery. */
 class TreePlaylistDocumentStorageFactory(private val context: Context) {
     private val resolver = context.contentResolver
 

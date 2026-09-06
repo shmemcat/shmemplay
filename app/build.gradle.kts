@@ -9,7 +9,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // Keep the installed app identity so shmemplay remains an in-place update.
+        // The application ID must stay stable to preserve access to installed app data.
         applicationId = "io.github.shmemcat.shmemplaylist"
         minSdk = 26
         targetSdk = 36

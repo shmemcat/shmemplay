@@ -98,10 +98,7 @@ class SafPlaylistTreeService(context: Context) {
         check(!documentExists(document.uri)) { "playlist-delete-verification-failed" }
     }
 
-    /**
-     * Creates and exclusively mutates a uniquely named disposable text document. Existing
-     * documents, including playlists, are never opened for writing.
-     */
+    /** Probe a disposable document so capability checks cannot alter the user's playlists. */
     fun testDisposableCapabilities(treeUri: Uri): ProviderCapabilityReport {
         val results = linkedMapOf<Capability, CapabilityResult>()
         var disposableUri: Uri? = null

@@ -34,7 +34,10 @@ interface PlaybackEngine {
     fun apply(book: QueueBook, play: Boolean?, seek: Boolean)
 }
 
-/** One serialized writer shared by the service and UI. Audio positions are small independent checkpoints. */
+/**
+ * Serialize service and UI writes to prevent competing queue updates.
+ * Separate position checkpoints avoid rewriting full queue snapshots on each checkpoint.
+ */
 class PlayerRepository internal constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val commands = Channel<suspend () -> Unit>(Channel.UNLIMITED)
@@ -112,7 +115,7 @@ class PlayerRepository internal constructor(context: Context) {
             val next = withContext(Dispatchers.Default) { transform(before).copy(revision = before.revision + 1) }
             withContext(Dispatchers.IO) {
                 atomicWrite(file) { QueueCodec.write(next, it) }
-                // A structural write includes every checkpoint and supersedes the old progress file.
+                // The snapshot includes all positions, so the separate checkpoint is redundant.
                 progress.delete()
             }
             mutableState.value = state.value.copy(book = next, error = null)

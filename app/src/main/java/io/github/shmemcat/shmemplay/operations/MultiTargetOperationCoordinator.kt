@@ -42,9 +42,8 @@ data class MultiTargetRecoveryOutcome(
 )
 
 /**
- * Serial production coordinator for ordered real-playlist batches. Every target is backed up
- * before the first write. Writes and verification run in target order; compensation runs in
- * reverse order and recovery-required state blocks all subsequent mutation.
+ * Back up every target before writing so a partial batch can be compensated in reverse order.
+ * Unresolved recovery blocks further mutation to avoid compounding an incomplete rollback.
  */
 class MultiTargetOperationCoordinator(
     private val storageResolver: PlaylistDocumentStorageResolver,

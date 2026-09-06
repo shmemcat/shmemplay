@@ -17,7 +17,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 
-/** Runs in an empty Compose host, with in-memory actions; never edits the user's files or queues. */
+/** An empty Compose host and in-memory actions isolate these tests from the device's library and queues. */
 class PlayerPolishTest {
     @get:Rule val compose = createComposeRule()
     private val track = LibraryTrack(MediaStoreIdentity("external_primary", 99999999),

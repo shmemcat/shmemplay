@@ -166,7 +166,6 @@
   function showBulk(){menuIds=[...selected];modal={type:'bulk-options'};dialog(`${selected.size.toLocaleString()} songs selected`,menuItem('play-after','list-start','Play after current song')+menuItem('append-active','list-end','Add to currently playing queue')+menuItem('add-queue','list-music','Add to a queue')+menuItem('membership','list-plus','Add / remove from playlists')+(section==='queues'?menuItem('remove-selected','circle-minus','Remove from this queue'):''),'','advanced');}
   function showSort(){modal={type:'sort'};dialog('Sort queue',menuItem('sort-title','arrow-down-a-z','Song title · A–Z')+menuItem('sort-artist','user-round','Artist · A–Z')+menuItem('sort-album','disc-3','Album · A–Z')+menuItem('sort-duration','clock','Duration · shortest first')+menuItem('sort-reverse','arrow-down-up','Reverse order'));}
   function failName(message){const el=$('.sp-error');el.textContent=message;el.hidden=false;}
-  // INTERACTIONS
   root.addEventListener('click',event=>{
     const b=event.target.closest('[data-act]');if(!b||!root.contains(b))return;const a=b.dataset.act,id=b.dataset.id,qid=b.dataset.qid;
     if(suppressClick&&(a==='song'||a==='move-entry')){suppressClick=false;return;}

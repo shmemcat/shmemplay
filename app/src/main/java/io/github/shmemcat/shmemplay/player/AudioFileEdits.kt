@@ -13,7 +13,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
-/** Exact-byte backup and journal survive an interrupted explicit tag Save. */
+/** Persist exact-byte backups and a journal so an interrupted tag save remains recoverable. */
 class AudioFileEdits(private val context: Context) {
     private val directory=File(context.filesDir,"audio-tag-recovery")
     private val journal=AtomicFile(File(directory,"pending.json"))

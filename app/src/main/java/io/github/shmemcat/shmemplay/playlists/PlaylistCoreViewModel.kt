@@ -65,9 +65,6 @@ sealed interface PhaseSevenOperationState {
     data class RecoveryRequired(val operationId: String) : PhaseSevenOperationState
 }
 
-/**
- * Non-UI integration surface for Phase 5. No method mutates a real playlist.
- */
 class PlaylistCoreViewModel(application: Application) : AndroidViewModel(application) {
     private val settings = PlaylistTreeSettings(application)
     private val trees = SafPlaylistTreeService(application)

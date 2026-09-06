@@ -78,10 +78,7 @@ data class RecoveryOutcome(
     val state: JournalState,
 )
 
-/**
- * Serial Phase 6 coordinator. The constructor accepts only the identity-gated test storage;
- * there is intentionally no URI, PlaylistDocument, file name, or arbitrary target parameter.
- */
+/** Accept only identity-gated test storage so an operation cannot target a user playlist. */
 class CompanionTestOperationCoordinator(
     private val storage: CompanionTestPlaylistStorage,
     private val backups: ExactByteBackupRepository,

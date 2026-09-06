@@ -1,10 +1,8 @@
 package io.github.shmemcat.shmemplay.domain
 
 /**
- * Plans one verified rewrite per selected playlist for an ordered set of tracks.
- * Existing playlist order and duplicate occurrences are preserved. ADD_ONE appends only
- * selected paths that are completely absent; REMOVE_ALL removes every occurrence of every
- * selected path.
+ * Membership edits preserve playlist order and intentional duplicates. Adding an existing
+ * member is a no-op; removing membership must remove every occurrence.
  */
 object ManyTrackBatchOperationPlannerV2 {
     fun plan(
@@ -94,7 +92,6 @@ sealed interface RecipeEvaluation {
     data class UnknownSources(val playlistIdentities: Set<String>) : RecipeEvaluation
 }
 
-/** Pure set evaluator used by playlist recipe previews and explicit reruns. */
 object PlaylistRecipeEvaluatorV1 {
     fun evaluate(
         allTrackIdentities: Set<String>,

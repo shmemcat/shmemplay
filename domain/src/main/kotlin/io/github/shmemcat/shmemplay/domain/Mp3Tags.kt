@@ -3,7 +3,7 @@ package io.github.shmemcat.shmemplay.domain
 import java.io.*
 import java.nio.charset.Charset
 
-/** Conservative ID3v2.3/2.4 text editing. Unsupported flags are rejected before any output is written. */
+/** Reject unsupported ID3 flags before writing because encoded frames cannot be safely preserved as raw bytes. */
 object Mp3Tags {
     data class Frame(val id: String, val bytes: ByteArray)
     data class Tag(val version: Int, val frames: List<Frame>, val audioOffset: Long, val size: Int) {

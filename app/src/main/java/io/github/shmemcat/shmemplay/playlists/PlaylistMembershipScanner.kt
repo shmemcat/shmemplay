@@ -39,9 +39,6 @@ data class PlaylistScanWarning(
     val error: ParseError,
 )
 
-/**
- * Read-only scanner: this type has no output-stream or document-mutation operation.
- */
 class PlaylistMembershipScanner(context: Context) {
     private val resolver = context.contentResolver
 

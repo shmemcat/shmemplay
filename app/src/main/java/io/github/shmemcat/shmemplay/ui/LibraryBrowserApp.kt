@@ -230,7 +230,6 @@ fun LibraryBrowserApp(
     LaunchedEffect(tracks) {
         val available = tracks.mapTo(hashSetOf(), LibraryTrack::stableId)
         selectedIds = selectedIds.filter { it in available || it in queueTracksById }
-        // Saved queue tracks remain available to the membership editor.
     }
     LaunchedEffect(query) {
         songsScrollState.scrollToItem(0)
@@ -434,7 +433,7 @@ fun LibraryBrowserApp(
             is BrowserMutationState.Result -> {
                 actions.clearMutationMessage()
                 editorTrackIds = emptyList()
-                // Keep success suppressed until the ViewModel publishes Idle.
+                // Clearing the message is asynchronous; releasing suppression here would flash the success dialog.
             }
             is BrowserMutationState.Error, BrowserMutationState.Idle -> membershipSubmitted = false
             else -> Unit

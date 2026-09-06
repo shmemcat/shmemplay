@@ -5,7 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.FileNotFoundException
 
-// Preserve the identity of companion test playlists created before the app rename.
+// This name participates in persisted identity checks and must remain stable.
 const val COMPANION_TEST_PLAYLIST_NAME = "Shmemplaylist Companion Test.m3u"
 
 class CompanionTestPlaylistIdentity internal constructor(
@@ -22,11 +22,7 @@ sealed interface CompanionTestProvisionResult {
     data class Refused(val reason: String) : CompanionTestProvisionResult
 }
 
-/**
- * The only production storage interface with write access. It cannot name or accept a target:
- * every call revalidates the app-created document's persisted URI, document ID, parent tree,
- * and exact display name.
- */
+/** Test writes are bound to a persisted, revalidated identity so callers cannot redirect them to another document. */
 interface CompanionTestPlaylistStorage {
     val redactedDocumentIdentity: String
     fun readExact(): ByteArray

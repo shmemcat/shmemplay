@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
-/** The entire row is the action target, including whitespace beside a short label. */
 @Composable internal fun MenuAction(label: String, icon: Int? = null, enabled: Boolean = true, onClick: () -> Unit) {
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .38f)
     Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
@@ -45,7 +44,6 @@ import androidx.compose.ui.unit.dp
 }
 
 
-/** Every header uses the same 12 dp gutter on both sides of the circular target. */
 @Composable internal fun BackChevronButton(onClick: () -> Unit, enabled: Boolean = true) {
     Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
         Box(

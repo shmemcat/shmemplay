@@ -44,10 +44,6 @@ data class BatchOperationPlan(
         get() = targets.filterIsInstance<BatchTargetDecision.Change>()
 }
 
-/**
- * Pure planner for an ordered selection. It never drops or reorders targets and only emits
- * canonical writer bytes. Add appends exactly one absent occurrence; remove deletes all matches.
- */
 object BatchOperationPlannerV1 {
     fun plan(
         action: BatchAction,

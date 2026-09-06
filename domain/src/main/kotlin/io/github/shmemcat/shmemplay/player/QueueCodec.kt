@@ -5,7 +5,6 @@ import java.io.DataOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 
-/** Versioned local queue format. No changes to the M3U/Room compatibility formats. */
 object QueueCodec {
     fun write(book: QueueBook, output: OutputStream) {
         val out = DataOutputStream(output.buffered(64 * 1024))

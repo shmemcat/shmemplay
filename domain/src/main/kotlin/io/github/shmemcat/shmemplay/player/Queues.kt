@@ -111,7 +111,7 @@ data class QueueBook(
             policy = inherited.copy(shuffle = false)).shuffled(shuffle ?: inherited.shuffle, random)
         return copy(queues = queues + queue, viewedId = id, activeId = id, nextCreation = nextCreation + 1)
     }
-    /** Shuffle the entire snapshot, including its starting song, while retaining source order for unshuffle. */
+    /** Retain source order so unshuffle can restore it even when playback starts at a random song. */
     fun createShuffled(id: String, name: String, tracks: List<QueueTrack>, random: Random = Random.Default): QueueBook {
         val entries = tracks.distinctBy { it.id }
         if (entries.isEmpty()) return this
