@@ -30,42 +30,13 @@ import io.github.shmemcat.shmemplay.storage.TreePlaylistDocumentStorageFactory
 import io.github.shmemcat.shmemplay.tracks.LibraryTrack
 import io.github.shmemcat.shmemplay.tracks.MediaStoreMusicLibraryRepository
 import io.github.shmemcat.shmemplay.tracks.MusicLibraryResult
+import io.github.shmemcat.shmemplay.domain.PlaylistRuleNode
+import io.github.shmemcat.shmemplay.domain.NestedPlaylistRules
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-data class SavedPlaylistRecipe(
-    val playlistName: String,
-    val match: RecipeMatch,
-    val rules: List<PlaylistRule>,
-)
-
-sealed interface BrowserMutationState {
-    data object Idle : BrowserMutationState
-    data class Working(val message: String) : BrowserMutationState
-    data class ReconfirmationRequired(val preview: BatchPreview) : BrowserMutationState
-    data class Result(val message: String, val operationId: String? = null) : BrowserMutationState
-    data class Error(val message: String) : BrowserMutationState
-}
-
-data class LibraryBrowserState(
-    val permissionRequired: Boolean = false,
-    val loadingLibrary: Boolean = false,
-    val loadingPlaylists: Boolean = false,
-    val allTracks: List<LibraryTrack> = emptyList(),
-    val availableFolderRoots: List<String> = emptyList(),
-    val includedFolderRoots: Set<String> = emptySet(),
-    val grant: PlaylistTreeGrantState = PlaylistTreeGrantState.NotConfigured,
-    val playlistScan: PlaylistLibraryScan = PlaylistLibraryScan(emptyList(), emptyList()),
-    val recipes: List<SavedPlaylistRecipe> = emptyList(),
-    val mutation: BrowserMutationState = BrowserMutationState.Idle,
-    val error: String? = null,
-) {
-    val tracks: List<LibraryTrack>
-        get() = allTracks.filter { it.folderRoot in includedFolderRoots }
-    val busy: Boolean get() = loadingLibrary || loadingPlaylists || mutation is BrowserMutationState.Working
-}
 
 class LibraryBrowserViewModel(application: Application) : AndroidViewModel(application) {
     private val library = MediaStoreMusicLibraryRepository(application)
@@ -75,6 +46,10 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
     private val playlistScanner = PlaylistLibraryScanner(application)
     private val documentStorage = TreePlaylistDocumentStorageFactory(application)
     private val recipes = PlaylistRecipeStore(application)
+    private val localRecipes = LocalPlaylistRecipes(application)
+    private var playlistsJob: Job? = null
+    private var observedTree: android.net.Uri? = null
+    private val playlistObserver = object : ContentObserver(Handler(Looper.getMainLooper())) { override fun onChange(selfChange: Boolean) { refreshPlaylists() } }
     private val coordinator = MultiTargetOperationCoordinator(
         storageResolver = PlaylistDocumentStorageResolver(::openDiscoveredStorage),
         backups = ExactByteBackupRepository(application),
@@ -84,6 +59,7 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
         LibraryBrowserState(
             grant = treeSettings.revalidate(),
             recipes = recipes.load(),
+            localRecipes = runCatching { localRecipes.load() }.getOrDefault(emptyList()),
         ),
     )
     private var pendingPreview: BatchPreview? = null
@@ -141,6 +117,7 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
 
     override fun onCleared() {
         getApplication<Application>().contentResolver.unregisterContentObserver(mediaObserver)
+        getApplication<Application>().contentResolver.unregisterContentObserver(playlistObserver)
         super.onCleared()
     }
 
@@ -166,17 +143,27 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun refreshPlaylists() {
+        playlistsJob?.cancel()
         val grant = treeSettings.revalidate()
         mutableState.value = mutableState.value.copy(
             grant = grant,
             loadingPlaylists = grant is PlaylistTreeGrantState.Valid,
+            livePlaylists = mutableState.value.livePlaylists.map { it.copy(sourceError = "Checking source playlists…") },
             error = null,
         )
         val treeUri = (grant as? PlaylistTreeGrantState.Valid)?.treeUri ?: return
-        viewModelScope.launch {
+        if (observedTree != treeUri) {
+            getApplication<Application>().contentResolver.unregisterContentObserver(playlistObserver)
+            val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
+            getApplication<Application>().contentResolver.registerContentObserver(children,true,playlistObserver)
+            observedTree = treeUri
+        }
+        playlistsJob = viewModelScope.launch {
+            delay(350)
+            val libraryTracks = mutableState.value.tracks
             val result = withContext(Dispatchers.IO) {
                 treeService.discoverDirectChildren(treeUri).map { documents ->
-                    playlistScanner.scan(documents, mutableState.value.tracks)
+                    playlistScanner.scan(documents, libraryTracks)
                 }
             }
             result.fold(
@@ -185,6 +172,7 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
                         playlistScan = scan,
                         loadingPlaylists = false,
                     )
+                    refreshLivePlaylists()
                     recoverIfNeeded()
                 },
                 onFailure = { failure -> mutableState.value = mutableState.value.copy(
@@ -196,7 +184,7 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun createPlaylist(name: String, tracks: List<LibraryTrack>, recipe: SavedPlaylistRecipe? = null) {
-        val paths = canonicalPaths(tracks) ?: return
+        val paths = canonicalPaths(tracks, allowEmpty = true) ?: return
         createPlaylistFromPaths(name, paths, recipe)
     }
 
@@ -291,17 +279,18 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
         applyConfirmed(preview)
     }
 
-    fun renamePlaylist(document: PlaylistDocument, name: String) =
+    private fun renameFilePlaylist(document: PlaylistDocument, name: String) =
         mutateDocument(
             message = "Renaming playlist…",
             block = { treeService.renamePlaylist(it.treeUri, document, name).getOrThrow() },
             onSuccess = { renamed ->
                 recipes.onRename(document, renamed)
+                viewModelScope.launch(Dispatchers.IO) { localRecipes.renameSource(document.uri.toString(), renamed.uri.toString()) }
                 mutableState.value = mutableState.value.copy(recipes = recipes.load())
             },
         )
 
-    fun deletePlaylist(document: PlaylistDocument) =
+    private fun deleteFilePlaylist(document: PlaylistDocument) =
         mutateDocument(
             message = "Deleting playlist…",
             block = { treeService.deletePlaylist(it.treeUri, document).getOrThrow() },
@@ -310,6 +299,67 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
                 mutableState.value = mutableState.value.copy(recipes = recipes.load())
             },
         )
+
+    fun renamePlaylist(document: PlaylistDocument, name: String) {
+        if (document.uri.scheme != "shmemplay-live") { renameFilePlaylist(document,name); return }
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) {
+                val recipe = localRecipes.load().first { it.id == document.uri.schemeSpecificPart }
+                require(name.isNotBlank()) { "Enter a playlist name." }
+                localRecipes.save(recipe.copy(name = name.trim()))
+            } }.onSuccess { refreshLivePlaylists() }.onFailure { setError(it.message ?: "Could not rename live playlist.") }
+        }
+    }
+    fun deletePlaylist(document: PlaylistDocument) {
+        if (document.uri.scheme != "shmemplay-live") { deleteFilePlaylist(document); return }
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { localRecipes.remove(document.uri.schemeSpecificPart) } }
+                .onSuccess { refreshLivePlaylists() }.onFailure { setError(it.message ?: "Could not remove live playlist.") }
+        }
+    }
+    private fun refreshLivePlaylists() {
+        viewModelScope.launch {
+            val scan = mutableState.value.playlistScan
+            val tracks = mutableState.value.tracks
+            runCatching { withContext(Dispatchers.Default) {
+                val definitions = localRecipes.load()
+                definitions to LocalPlaylistRecipes.evaluate(definitions,scan,tracks)
+            } }.onSuccess { (definitions, live) ->
+                if (mutableState.value.playlistScan === scan) mutableState.value = mutableState.value.copy(localRecipes = definitions, livePlaylists = live)
+            }.onFailure { setError("Could not read local recipes. Saved definitions were kept: " + it.message) }
+        }
+    }
+    fun createNestedPlaylist(name: String, rule: PlaylistRuleNode, live: Boolean, existingId: String? = null) {
+        val grant = treeSettings.revalidate() as? PlaylistTreeGrantState.Valid ?: run { setError("Choose the source playlist folder first."); return }
+        val tracks = mutableState.value.tracks
+        mutableState.value = mutableState.value.copy(mutation = BrowserMutationState.Working("Checking rule sources…"))
+        viewModelScope.launch {
+            val checked = runCatching { withContext(Dispatchers.IO) {
+                require(name.isNotBlank()) { "Enter a playlist name." }
+                val documents = treeService.discoverDirectChildren(grant.treeUri).getOrThrow()
+                val first = playlistScanner.scan(documents,tracks)
+                delay(350)
+                val second = playlistScanner.scan(treeService.discoverDirectChildren(grant.treeUri).getOrThrow(),tracks)
+                val sources = NestedPlaylistRules.sources(rule)
+                fun signature(scan: PlaylistLibraryScan) = scan.playlists.filter { it.document.uri.toString() in sources }.associate { it.document.uri.toString() to it.entries.map { e -> e.normalizedPath } }
+                check(signature(first) == signature(second)) { "Source files are changing. Wait for copying to finish and try again." }
+                val result = NestedPlaylistRules.evaluate(tracks.mapTo(linkedSetOf()) { it.stableId },second.playlists.associate { it.document.uri.toString() to it.resolvedTrackIds },rule)
+                check(result is RecipeEvaluation.Success) { "A source is missing or unreadable. Refresh or repair the rules first." }
+                val selected = tracks.filter { it.stableId in result.trackIdentities }
+                if (live) localRecipes.save(LocalPlaylistRecipe(existingId ?: java.util.UUID.randomUUID().toString(),name.trim(),rule))
+                selected
+            } }
+            checked.onSuccess { selected ->
+                if (live) {
+                    mutableState.value = mutableState.value.copy(mutation = BrowserMutationState.Result("Live playlist saved locally."))
+                    refreshLivePlaylists()
+                } else {
+                    val paths = canonicalPaths(selected,allowEmpty = true)
+                    if (paths != null) createPlaylistFromPaths(name,paths,null)
+                }
+            }.onFailure { setError(it.message ?: "Could not create playlist.") }
+        }
+    }
 
     fun clearMutationMessage() {
         if (mutableState.value.mutation !is BrowserMutationState.Working) {

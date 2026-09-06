@@ -1,5 +1,7 @@
 # shmemplay development handoff
 
+> **Current update, September 6, 2026:** A native player implementation now exists. Read [player-implementation.md](player-implementation.md) for implemented features, passing checks, installed debug build, provisional boundaries, and outstanding device acceptance. The repository-state and what-is-built sections below are the historical September 5 baseline, not the current implementation inventory.
+
 Prepared September 5, 2026, after the repository/folder rename. This is the entry point for a new coding chat. The user approved the player design and wants to proceed to native implementation; do not restart the design interview or substitute another mock for building the app.
 
 ## Read these first

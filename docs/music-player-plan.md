@@ -2,7 +2,7 @@
 
 Implementation entry point: [START-HERE.md](START-HERE.md). The approved mock and screenshots are preserved in [prototype/README.md](prototype/README.md).
 
-Status: proposed next development phase, September 5, 2026. This document captures the user's Musicolet references and requested behavior. It does not describe playback as already implemented. The screenshots are preserved unmodified in [player-references](player-references/).
+Status: native implementation added September 6, 2026; see [implementation and verification status](player-implementation.md). The original specification was captured September 5, 2026. This document captures the user's Musicolet references and requested behavior. It does not describe playback as already implemented. The screenshots are preserved unmodified in [player-references](player-references/).
 
 This extends the [2.0 browser plan](browser-2-plan.md). For the player phase it supersedes that plan's no-playback restriction, single-action song popup, incoming-share entry point, five-destination navigation, and snapshot-only recipe creation. Existing direct M3U editing, selection, search normalization, dark purple appearance, compact lists, and fast scrolling remain foundations.
 
@@ -197,4 +197,4 @@ The first interactive mock now covers the agreed navigation, queue browsing and 
 
 Browser checks passed for a 30,000-song library with fewer than 20 song rows rendered during normal and deep scrolling; dynamic fast-scroll previews; persistent apostrophe-tolerant search; filtered bulk selection; fresh queues from library and queue-search results; move-without-duplicate insertion; shuffle anchoring and order restoration; inactive queue browsing; active-queue deletion advancing to its successor; settings inheritance; Live updates with unchanged Snapshots and existing queues; all-selected playlist emphasis; and duplicate-free M3U-style additions. Layouts and scrollable dialogs were checked at 360px and 320px. These checks validate the mock, not Android performance or playback.
 
-Native playback implementation and a new APK are not produced by this specification/mock update. All ten pre-mock design questions are answered. Smaller boundary details explicitly noted above can be refined during review and implementation.
+The original specification/mock update did not produce native playback or an APK. The later [native implementation](player-implementation.md) now provides both; its remaining device acceptance checks are tracked separately. All ten pre-mock design questions are answered. Smaller boundary details explicitly noted above can be refined during review and implementation.

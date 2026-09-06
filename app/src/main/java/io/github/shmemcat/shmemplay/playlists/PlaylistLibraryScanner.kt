@@ -11,6 +11,8 @@ data class PlaylistEntry(val normalizedPath: String, val track: LibraryTrack?)
 data class PlaylistSnapshot(
     val document: PlaylistDocument,
     val entries: List<PlaylistEntry>,
+    val live: Boolean = false,
+    val sourceError: String? = null,
 ) {
     val resolvedTracks: List<LibraryTrack> get() = entries.mapNotNull(PlaylistEntry::track)
     val resolvedTrackIds: Set<String> get() = resolvedTracks.mapTo(linkedSetOf(), LibraryTrack::stableId)
@@ -34,6 +36,8 @@ data class SelectionMembership(
 
 class PlaylistLibraryScanner(context: Context) {
     private val resolver = context.contentResolver
+    private data class Cached(val digest: String, val document: PlaylistDocument, val tracks: List<LibraryTrack>, val snapshot: PlaylistSnapshot)
+    private val cache = java.util.concurrent.ConcurrentHashMap<String,Cached>()
 
     fun scan(documents: List<PlaylistDocument>, tracks: List<LibraryTrack>): PlaylistLibraryScan {
         val byPath = tracks.mapNotNull { track ->
@@ -41,14 +45,29 @@ class PlaylistLibraryScanner(context: Context) {
         }.toMap()
         val snapshots = mutableListOf<PlaylistSnapshot>()
         val warnings = mutableListOf<String>()
+        cache.keys.retainAll(documents.map { it.uri.toString() }.toSet())
         documents.forEach { document ->
+            var digest: String? = null
+            var reused: PlaylistSnapshot? = null
             val parsed = runCatching {
-                resolver.openInputStream(document.uri)?.use { M3uParserV1.parse(it, document.displayName) }
-                    ?: error("playlist-input-unavailable")
+                resolver.openInputStream(document.uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while(true) { val count = input.read(buffer); if(count < 0) break; check(output.size() + count <= 4 * 1024 * 1024) { "playlist-too-large" };output.write(buffer,0,count) }
+                    val bytes = output.toByteArray()
+                    digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+                    val previous = cache[document.uri.toString()]
+                    if(previous != null && previous.digest == digest && previous.document == document && previous.tracks == tracks) {
+                        reused = previous.snapshot
+                        null
+                    } else M3uParserV1.parse(bytes,document.displayName)
+                }
+                    ?: if(reused != null) null else error("playlist-input-unavailable")
             }.getOrElse {
                 warnings += "${document.displayName}: ${it.javaClass.simpleName}"
                 null
             }
+            reused?.let { snapshots += it }
             when (parsed) {
                 is ParseResult.Success -> snapshots += PlaylistSnapshot(
                     document,
@@ -58,6 +77,11 @@ class PlaylistLibraryScanner(context: Context) {
                 )
                 is ParseResult.Failure -> warnings += "${document.displayName}: ${parsed.error.code}"
                 null -> Unit
+            }
+            if(reused == null) {
+                val snapshot = snapshots.lastOrNull()?.takeIf { it.document.uri == document.uri }
+                if(snapshot != null && digest != null) cache[document.uri.toString()] = Cached(digest!!,document,tracks,snapshot)
+                else cache.remove(document.uri.toString())
             }
         }
         return PlaylistLibraryScan(snapshots, warnings)

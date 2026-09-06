@@ -1,5 +1,13 @@
 package io.github.shmemcat.shmemplay.ui
 
+import io.github.shmemcat.shmemplay.R
+import io.github.shmemcat.shmemplay.player.PlayerRepository
+import io.github.shmemcat.shmemplay.player.PlayerUiState
+import io.github.shmemcat.shmemplay.player.toLibraryTrack
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.heightIn
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
@@ -29,6 +37,14 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -47,8 +63,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -70,6 +84,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -118,6 +133,7 @@ data class LibraryBrowserActions(
     val applyMembership: (BatchAction, List<PlaylistDocument>, List<LibraryTrack>) -> Unit = { _, _, _ -> },
     val confirmMutation: () -> Unit = {},
     val createPlaylist: (String, List<LibraryTrack>) -> Unit = { _, _ -> },
+    val createNestedPlaylist: (String, io.github.shmemcat.shmemplay.domain.PlaylistRuleNode, Boolean, String?) -> Unit = { _, _, _, _ -> },
     val createRulePlaylist: (String, RecipeMatch, List<PlaylistRule>) -> Unit = { _, _, _ -> },
     val rerunRecipe: (SavedPlaylistRecipe) -> Unit = {},
     val renamePlaylist: (PlaylistDocument, String) -> Unit = { _, _ -> },
@@ -126,7 +142,9 @@ data class LibraryBrowserActions(
 )
 
 private enum class BrowserSection(val label: String, val glyph: String) {
-    SONGS("Songs", "♪"),
+    QUEUES("Queues", "list-music"),
+    NOW_PLAYING("Now Playing", "circle-play"),
+    SONGS("All Songs", "music-2"),
     ALBUMS("Albums", "▣"),
     ARTISTS("Artists", "♟"),
     GENRES("Genres", "◆"),
@@ -141,15 +159,23 @@ private data class BrowserDetail(val kind: DetailKind, val key: String)
 fun LibraryBrowserApp(
     state: LibraryBrowserState,
     actions: LibraryBrowserActions,
+    playerRepository: PlayerRepository? = null,
 ) {
+    val playerState = playerRepository?.state?.collectAsState()?.value ?: PlayerUiState()
+    var addSelectionToQueue by remember { mutableStateOf(false) }
     var sectionName by rememberSaveable { mutableStateOf(BrowserSection.SONGS.name) }
     var detailKind by rememberSaveable { mutableStateOf<String?>(null) }
     var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    var queueQuery by rememberSaveable { mutableStateOf("") }
     var selectedIds by rememberSaveable { mutableStateOf(listOf<String>()) }
     var editorTrackIds by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var membershipSubmitted by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showRules by rememberSaveable { mutableStateOf(false) }
+    var showNewPlaylist by rememberSaveable { mutableStateOf(false) }
+    var editingRecipe by remember { mutableStateOf<io.github.shmemcat.shmemplay.playlists.LocalPlaylistRecipe?>(null) }
+    var playlistFilter by rememberSaveable { mutableStateOf("All") }
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var optionsExpanded by rememberSaveable { mutableStateOf(false) }
     var playlistMenuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -157,6 +183,7 @@ fun LibraryBrowserApp(
     var deleteDocumentUri by rememberSaveable { mutableStateOf<String?>(null) }
 
     val section = BrowserSection.valueOf(sectionName)
+    val playerSection = section == BrowserSection.QUEUES || section == BrowserSection.NOW_PLAYING
     val detail = detailKind?.let { kind -> detailKey?.let { BrowserDetail(DetailKind.valueOf(kind), it) } }
     val songsScrollState = rememberLazyListState()
     val albumsScrollState = rememberLazyListState()
@@ -167,6 +194,7 @@ fun LibraryBrowserApp(
     val scrollScope = rememberCoroutineScope()
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     fun rootScrollState(destination: BrowserSection): LazyListState = when (destination) {
+        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> songsScrollState
         BrowserSection.SONGS -> songsScrollState
         BrowserSection.ALBUMS -> albumsScrollState
         BrowserSection.ARTISTS -> artistsScrollState
@@ -177,19 +205,23 @@ fun LibraryBrowserApp(
     val tracks = remember(state.allTracks, state.includedFolderRoots) {
         state.allTracks.filter { it.folderRoot in state.includedFolderRoots }
     }
-    val playlists = state.playlistScan.playlists
+    val playlists = remember(state.browserPlaylists,playlistFilter,section,detail) { state.browserPlaylists.filter { detail != null || section != BrowserSection.PLAYLISTS || playlistFilter == "All" || (it.live == (playlistFilter == "Live")) } }
     val tracksById = remember(tracks) { tracks.associateBy(LibraryTrack::stableId) }
-    val editorTracks = remember(editorTrackIds, tracksById) { editorTrackIds.mapNotNull(tracksById::get) }
-    val selectedTracks = remember(selectedIds, tracksById) { selectedIds.mapNotNull(tracksById::get) }
+    val queueTracksById = remember(playerState.book.queues.map { it.entries }) { playerState.book.queues.flatMap { it.entries }.associate { it.id to it.toLibraryTrack() } }
+    val editorTracks = remember(editorTrackIds, tracksById, queueTracksById) { editorTrackIds.mapNotNull { tracksById[it] ?: queueTracksById[it] } }
+    val selectedTracks = remember(selectedIds, tracksById, queueTracksById) { selectedIds.mapNotNull { tracksById[it] ?: queueTracksById[it] } }
     val selectedSet = remember(selectedIds) { selectedIds.toHashSet() }
-    val currentTracks = remember(tracks, playlists, section, detail, query) {
-        currentListTracks(tracks, playlists, section, detail, query)
+    val currentTracks by produceState<List<LibraryTrack>>(emptyList(), tracks, playlists, section, detail, query, queueQuery, playerState.book.viewed?.entries) {
+        value = withContext(Dispatchers.Default) {
+            if (section == BrowserSection.QUEUES) playerState.book.viewed?.entries.orEmpty().map { it.toLibraryTrack() }.filter { LibrarySearch.matches(it, queueQuery) }
+            else currentListTracks(tracks, playlists, section, detail, query)
+        }
     }
     val currentUnique = remember(currentTracks) { currentTracks.distinctBy(LibraryTrack::stableId) }
     val currentTrackIds = remember(currentUnique) { currentUnique.map(LibraryTrack::stableId) }
     val currentSelected = remember(currentTrackIds, selectedSet) { currentTrackIds.count(selectedSet::contains) }
-    val headerStats = remember(tracks, playlists, section, detail, query, currentUnique) {
-        browserStats(tracks, playlists, section, detail, query, currentUnique)
+    val headerStats by produceState("", tracks, playlists, section, detail, query, currentUnique) {
+        value = withContext(Dispatchers.Default) { browserStats(tracks, playlists, section, detail, query, currentUnique) }
     }
     val openPlaylist = detail?.takeIf { it.kind == DetailKind.PLAYLIST }?.let { current ->
         playlists.firstOrNull { it.document.uri.toString() == current.key }
@@ -197,8 +229,8 @@ fun LibraryBrowserApp(
 
     LaunchedEffect(tracks) {
         val available = tracks.mapTo(hashSetOf(), LibraryTrack::stableId)
-        selectedIds = selectedIds.filter { it in available }
-        editorTrackIds = editorTrackIds.filter { it in available }
+        selectedIds = selectedIds.filter { it in available || it in queueTracksById }
+        // Saved queue tracks remain available to the membership editor.
     }
     LaunchedEffect(query) {
         songsScrollState.scrollToItem(0)
@@ -217,7 +249,7 @@ fun LibraryBrowserApp(
 
     BackHandler(enabled = editorTrackIds.isNotEmpty() || detail != null || selectedIds.isNotEmpty()) {
         when {
-            editorTrackIds.isNotEmpty() -> editorTrackIds = emptyList()
+            editorTrackIds.isNotEmpty() -> if (!membershipSubmitted) editorTrackIds = emptyList()
             detail != null -> {
                 detailKind = null
                 detailKey = null
@@ -226,23 +258,23 @@ fun LibraryBrowserApp(
         }
     }
 
-    if (editorTrackIds.isNotEmpty()) {
-        MembershipEditor(
-            state = state,
-            tracks = editorTracks,
-            actions = actions,
-            onBack = { editorTrackIds = emptyList() },
-        )
-        MutationDialogs(state, actions)
-        return
-    }
-
+    val songPlayback = playerRepository?.let { repository -> SongPlaybackActions(repository, navigate = { kind, key ->
+        sectionName = when(kind) { "Album" -> BrowserSection.ALBUMS.name; "Artist" -> BrowserSection.ARTISTS.name; else -> BrowserSection.GENRES.name }
+        detailKind = when(kind) { "Album" -> DetailKind.ALBUM.name; "Artist" -> DetailKind.ARTIST.name; else -> DetailKind.GENRE.name }
+        detailKey = key
+    }) { track ->
+        repository.create(detailTitle(detail, state) ?: section.label, currentTracks, track)
+        sectionName = BrowserSection.NOW_PLAYING.name
+        detailKind = null
+        detailKey = null
+    } }
+    CompositionLocalProvider(LocalSongPlayback provides songPlayback) {
     Scaffold(
-        modifier = Modifier.imePadding(),
+        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).imePadding(),
         topBar = {
             BrowserTopBar(
-                title = detailTitle(detail, state) ?: "shmemplay",
-                stats = headerStats,
+                title = if (playerSection) section.label else detailTitle(detail, state) ?: "shmemplay",
+                stats = if (playerSection) "" else headerStats,
                 canGoBack = detail != null,
                 onBack = {
                     detailKind = null
@@ -252,8 +284,18 @@ fun LibraryBrowserApp(
                 playlist = openPlaylist,
                 playlistMenuExpanded = playlistMenuExpanded,
                 onPlaylistMenuExpanded = { playlistMenuExpanded = it },
-                onRules = { showRules = true },
+                onRules = { editingRecipe = openPlaylist?.takeIf { it.live }?.let { snapshot -> state.localRecipes.firstOrNull { it.id == snapshot.document.uri.schemeSpecificPart } }; showRules = true },
                 showRules = section == BrowserSection.PLAYLISTS && detail == null,
+                onNewPlaylist = { showNewPlaylist = true },
+                canShufflePlaylist = playerRepository != null && openPlaylist?.sourceError == null && openPlaylist?.entries?.any { it.track != null } == true,
+                onShufflePlaylist = {
+                    openPlaylist?.let { snapshot ->
+                        playerRepository?.shuffleAndPlay(if (snapshot.live) snapshot.document.displayName else snapshot.document.displayName.substringBeforeLast('.'), snapshot.resolvedTracks)
+                        sectionName = BrowserSection.NOW_PLAYING.name
+                        detailKind = null
+                        detailKey = null
+                    }
+                },
                 onRename = { openPlaylist?.let { renameDocumentUri = it.document.uri.toString() } },
                 onDelete = { openPlaylist?.let { deleteDocumentUri = it.document.uri.toString() } },
                 onSelectAll = {
@@ -266,7 +308,7 @@ fun LibraryBrowserApp(
         },
         bottomBar = {
             Column {
-                if (selectedIds.isNotEmpty()) {
+                if (selectedIds.isNotEmpty() && section != BrowserSection.NOW_PLAYING) {
                     SelectionBar(
                         selectedTracks = selectedTracks,
                         currentSelected = currentSelected,
@@ -274,6 +316,8 @@ fun LibraryBrowserApp(
                         advancedExpanded = advancedExpanded,
                         rangeAvailable = currentSelected >= 2,
                         onOptionsExpanded = { optionsExpanded = it },
+                        onQueue = { optionsExpanded = false; addSelectionToQueue = true },
+                        onPlayNext = { optionsExpanded = false; playerState.book.activeId?.let { playerRepository?.insert(it, selectedTracks, true) } },
                         onAdvancedExpanded = { advancedExpanded = it },
                         onPlaylist = {
                             optionsExpanded = false
@@ -306,25 +350,30 @@ fun LibraryBrowserApp(
                         onCancel = { selectedIds = emptyList() },
                     )
                 }
-                SearchBar(query = query, onQueryChange = { query = it }, onClear = { query = "" })
+                if (section == BrowserSection.QUEUES) SearchBar(queueQuery, { queueQuery = it }, { queueQuery = "" })
+                else if (!playerSection) SearchBar(query = query, onQueryChange = { query = it }, onClear = { query = "" })
                 if (keyboardVisible) {
                     Spacer(Modifier.height(6.dp))
                 } else {
-                    NavigationBar {
-                        BrowserSection.entries.forEach { destination ->
-                            NavigationBarItem(
-                                selected = section == destination,
-                                onClick = {
-                                    if (section != destination) {
-                                        scrollScope.launch { rootScrollState(destination).scrollToItem(0) }
-                                    }
-                                    sectionName = destination.name
-                                    detailKind = null
-                                    detailKey = null
-                                },
-                                icon = { Text(destination.glyph, fontSize = 26.sp, fontWeight = FontWeight.Bold) },
-                                label = { Text(destination.label) },
-                            )
+                    Surface(tonalElevation = 3.dp) {
+                        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(56.dp).padding(horizontal = 4.dp).selectableGroup()) {
+                            BrowserSection.entries.forEach { destination ->
+                                Box(
+                                    Modifier.weight(1f).fillMaxHeight()
+                                        .background(if (section == destination) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                        .selectable(
+                                        selected = section == destination, role = Role.Tab,
+                                        onClick = {
+                                            if (section != destination) scrollScope.launch { rootScrollState(destination).scrollToItem(0) }
+                                            sectionName = destination.name
+                                            detailKind = null
+                                            detailKey = null
+                                        },
+                                    ), contentAlignment = Alignment.Center,
+                                ) {
+                                    PlayerIcon(sectionIcon(destination), destination.label)
+                                }
+                            }
                         }
                     }
                 }
@@ -333,11 +382,20 @@ fun LibraryBrowserApp(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
+                playerSection && playerRepository != null -> {
+                    if (!playerState.ready || !playerState.connected) Loading(playerState.error ?: "Connecting player…")
+                    else if (section == BrowserSection.NOW_PLAYING) NowPlayingScreen(playerState, playerRepository) { editorTrackIds = listOf(it.stableId) }
+                    else QueuesScreen(playerState, playerRepository, { editorTrackIds = listOf(it.stableId) }, actions.createPlaylist,
+                        queueQuery, selectedSet, { id -> selectedIds = if (id in selectedSet) selectedIds - id else selectedIds + id },
+                        { id -> if (id !in selectedSet) selectedIds = selectedIds + id })
+                }
                 state.permissionRequired -> PermissionRequired(actions.requestAudioPermission)
                 state.loadingLibrary && state.allTracks.isEmpty() -> Loading("Scanning music…")
                 state.error != null && state.allTracks.isEmpty() -> EmptyMessage(state.error)
                 else -> BrowserContent(
                     state = state,
+                    playlistFilter = playlistFilter,
+                    onPlaylistFilter = { playlistFilter = it },
                     tracks = tracks,
                     currentTracks = currentUnique,
                     rootScrollState = rootScrollState(section),
@@ -364,20 +422,42 @@ fun LibraryBrowserApp(
                     onPlaylist = { track -> editorTrackIds = listOf(track.stableId) },
                 )
             }
-            if (state.busy && state.allTracks.isNotEmpty()) {
+            if (state.busy && state.allTracks.isNotEmpty() && !membershipSubmitted) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
         }
     }
 
+    }
+    LaunchedEffect(state.mutation, membershipSubmitted) {
+        if (membershipSubmitted) when (state.mutation) {
+            is BrowserMutationState.Result -> {
+                actions.clearMutationMessage()
+                editorTrackIds = emptyList()
+                // Keep success suppressed until the ViewModel publishes Idle.
+            }
+            is BrowserMutationState.Error, BrowserMutationState.Idle -> membershipSubmitted = false
+            else -> Unit
+        }
+    }
+    if (editorTrackIds.isNotEmpty()) {
+        Dialog(onDismissRequest = { if (!membershipSubmitted) editorTrackIds = emptyList() }) {
+            Surface(Modifier.fillMaxWidth().fillMaxHeight(.86f), shape = RoundedCornerShape(20.dp)) {
+                MembershipEditor(state, editorTracks, actions, membershipSubmitted, { membershipSubmitted = true }) { if (!membershipSubmitted) editorTrackIds = emptyList() }
+            }
+        }
+    }
+    if (addSelectionToQueue && playerRepository != null) AddToQueueDialog(selectedTracks, playerRepository) { addSelectionToQueue = false }
+    if (playerState.error != null && playerState.ready) AlertDialog(onDismissRequest = { playerRepository?.clearError() },
+        title = { Text("Player") }, text = { Text(playerState.error) }, confirmButton = { TextButton(onClick = { playerRepository?.clearError() }) { Text("OK") } })
     if (showSettings) {
         SettingsSheet(state, actions, onDismiss = { showSettings = false })
     }
     if (showRules) {
-        RulesSheet(state, actions, onDismiss = { showRules = false })
+        NestedRulesDialog(state, actions, onDismiss = { showRules = false }, initial = editingRecipe)
     }
     renameDocumentUri?.let { uri ->
-        val document = state.playlistScan.playlists.firstOrNull { it.document.uri.toString() == uri }?.document
+        val document = state.browserPlaylists.firstOrNull { it.document.uri.toString() == uri }?.document
         if (document != null) NameDialog(
             title = "Rename playlist",
             initialName = document.displayName.substringBeforeLast('.'),
@@ -393,11 +473,11 @@ fun LibraryBrowserApp(
         ) else renameDocumentUri = null
     }
     deleteDocumentUri?.let { uri ->
-        val document = state.playlistScan.playlists.firstOrNull { it.document.uri.toString() == uri }?.document
+        val document = state.browserPlaylists.firstOrNull { it.document.uri.toString() == uri }?.document
         if (document != null) AlertDialog(
             onDismissRequest = { deleteDocumentUri = null },
             title = { Text("Delete ${document.displayName}?") },
-            text = { Text("This deletes the playlist file. The audio files stay on your phone.") },
+            text = { Text(if(document.uri.scheme == "shmemplay-live") "This removes the local rule definition. Audio and M3U files stay on your phone." else "This deletes the playlist file. The audio files stay on your phone.") },
             confirmButton = {
                 TextButton(onClick = {
                     actions.deletePlaylist(document)
@@ -409,7 +489,12 @@ fun LibraryBrowserApp(
             dismissButton = { TextButton(onClick = { deleteDocumentUri = null }) { Text("Cancel") } },
         ) else deleteDocumentUri = null
     }
-    MutationDialogs(state, actions)
+    if (showNewPlaylist) NameDialog("New playlist", "", "Create", "Start with an empty playlist.",
+        { showNewPlaylist = false }) { name ->
+        actions.createPlaylist(name, emptyList())
+        showNewPlaylist = false
+    }
+    MutationDialogs(state, actions, suppressSuccess = membershipSubmitted)
 }
 
 @Composable
@@ -424,19 +509,22 @@ private fun BrowserTopBar(
     onPlaylistMenuExpanded: (Boolean) -> Unit,
     showRules: Boolean,
     onRules: () -> Unit,
+    onNewPlaylist: () -> Unit,
+    canShufflePlaylist: Boolean,
+    onShufflePlaylist: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onSelectAll: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(start = 16.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 if (canGoBack) {
-                    TextButton(onClick = onBack) { Text("‹", fontSize = 40.sp, lineHeight = 40.sp) }
+                    TextButton(onClick = onBack) { PlayerIcon(R.drawable.ic_chevron_down, "Back", Modifier.size(25.dp).rotate(90f)) }
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -447,7 +535,7 @@ private fun BrowserTopBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
+                    if (stats.isNotBlank()) Text(
                         stats,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -457,14 +545,31 @@ private fun BrowserTopBar(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showRules) TextButton(onClick = onRules) { Text("+ Rules") }
+                if (showRules) {
+                    var creationMenu by remember { mutableStateOf(false) }
+                    Box {
+                        PlayerButton(R.drawable.ic_plus, "Create playlist") { creationMenu = true }
+                        DropdownMenu(creationMenu, { creationMenu = false }) {
+                            DropdownMenuItem(text = { Text("New playlist") }, onClick = { creationMenu = false; onNewPlaylist() })
+                            DropdownMenuItem(text = { Text("New playlist from rules") }, onClick = { creationMenu = false; onRules() })
+                        }
+                    }
+                }
                 if (playlist != null) {
                     Box {
-                        TextButton(onClick = { onPlaylistMenuExpanded(true) }) { Text("⋮", fontSize = 30.sp) }
+                        TextButton(onClick = { onPlaylistMenuExpanded(true) }) { PlayerIcon(R.drawable.ic_ellipsis, "Playlist options") }
                         DropdownMenu(
                             expanded = playlistMenuExpanded,
                             onDismissRequest = { onPlaylistMenuExpanded(false) },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Shuffle & Play") },
+                                leadingIcon = { PlayerIcon(R.drawable.ic_shuffle, null) },
+                                enabled = canShufflePlaylist,
+                                onClick = { onPlaylistMenuExpanded(false); onShufflePlaylist() },
+                            )
+                            HorizontalDivider()
+                            if (playlist.live) DropdownMenuItem(text = { Text("Edit rules / repair sources") }, onClick = { onPlaylistMenuExpanded(false); onRules() })
                             DropdownMenuItem(text = { Text("Rename playlist") }, onClick = {
                                 onPlaylistMenuExpanded(false); onRename()
                             })
@@ -480,7 +585,7 @@ private fun BrowserTopBar(
                 TextButton(
                     onClick = onSettings,
                     modifier = Modifier.semantics { contentDescription = "Settings" },
-                ) { Text("⚙", fontSize = 30.sp) }
+                ) { PlayerIcon(R.drawable.ic_settings, "Settings") }
             }
         }
     }
@@ -489,6 +594,8 @@ private fun BrowserTopBar(
 @Composable
 private fun BrowserContent(
     state: LibraryBrowserState,
+    playlistFilter: String,
+    onPlaylistFilter: (String) -> Unit,
     tracks: List<LibraryTrack>,
     currentTracks: List<LibraryTrack>,
     rootScrollState: LazyListState,
@@ -505,7 +612,7 @@ private fun BrowserContent(
 ) {
     if (detail != null) {
         if (detail.kind == DetailKind.PLAYLIST) {
-            val snapshot = state.playlistScan.playlists.firstOrNull { it.document.uri.toString() == detail.key }
+            val snapshot = state.browserPlaylists.firstOrNull { it.document.uri.toString() == detail.key }
             if (snapshot == null) EmptyMessage("Playlist no longer exists.") else PlaylistEntries(
                 snapshot = snapshot,
                 query = query,
@@ -530,6 +637,7 @@ private fun BrowserContent(
         return
     }
     when (section) {
+        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> Unit
         BrowserSection.SONGS -> TrackList(
             tracks = currentTracks,
             listState = rootScrollState,
@@ -542,7 +650,7 @@ private fun BrowserContent(
         BrowserSection.ALBUMS -> GroupList(tracks, DetailKind.ALBUM, query, rootScrollState, onOpenDetail)
         BrowserSection.ARTISTS -> GroupList(tracks, DetailKind.ARTIST, query, rootScrollState, onOpenDetail)
         BrowserSection.GENRES -> GroupList(tracks, DetailKind.GENRE, query, rootScrollState, onOpenDetail)
-        BrowserSection.PLAYLISTS -> PlaylistList(state, query, rootScrollState, onOpenDetail)
+        BrowserSection.PLAYLISTS -> PlaylistList(state, query, rootScrollState, onOpenDetail, playlistFilter, onPlaylistFilter)
     }
 }
 
@@ -574,7 +682,7 @@ private fun TrackList(
 }
 
 @Composable
-private fun FastScrollableLazyColumn(
+internal fun FastScrollableLazyColumn(
     listState: LazyListState,
     itemCount: Int,
     bucketLabels: List<String>?,
@@ -763,15 +871,8 @@ private fun PlaylistEntries(
     onToggle: (LibraryTrack) -> Unit,
     onPlaylist: (LibraryTrack) -> Unit,
 ) {
-    val exposeAll = LibrarySearch.matches(snapshot.document.displayName, query)
-    val entries = remember(snapshot.entries, snapshot.document.displayName, query) {
-        snapshot.entries.filter { entry ->
-            query.isBlank() || exposeAll || entry.track?.let { LibrarySearch.matches(it, query) } == true ||
-                LibrarySearch.matches(entry.normalizedPath, query)
-        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) {
-            it.track?.title ?: it.normalizedPath.substringAfterLast('/')
-        })
-    }
+    if (snapshot.sourceError != null) { EmptyMessage(snapshot.sourceError); return }
+    val entries = remember(snapshot,query) { displayedPlaylistEntries(snapshot,query) }
     if (entries.isEmpty()) {
         EmptyMessage("No playlist entries match this search.")
         return
@@ -813,6 +914,7 @@ private fun SongRow(
     onPlaylist: (LibraryTrack) -> Unit,
 ) {
     var menu by rememberSaveable(track.stableId) { mutableStateOf(false) }
+    val playback = LocalSongPlayback.current
     val background = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Row(
         modifier = Modifier
@@ -820,7 +922,7 @@ private fun SongRow(
             .height(56.dp)
             .background(background)
             .combinedClickable(
-                onClick = { if (selectionMode) onToggle(track) },
+                onClick = { if (selectionMode) onToggle(track) else playback?.play?.invoke(track) },
                 onLongClick = { onLongPress(track) },
             )
             .padding(horizontal = 10.dp, vertical = 4.dp),
@@ -838,26 +940,19 @@ private fun SongRow(
             )
         }
         Text(formatDuration(track.durationMs), style = MaterialTheme.typography.bodySmall)
-        Box {
-            TextButton(onClick = { menu = true }, modifier = Modifier.width(48.dp)) { Text("⋮", fontSize = 28.sp) }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Playlist") }, onClick = {
-                    menu = false
-                    onPlaylist(track)
-                })
-            }
-        }
+        PlayerButton(R.drawable.ic_ellipsis, "Options for " + track.title) { menu = true }
     }
+    if (menu) SongOptionsDialog(track, playback?.repository, null, onPlaylist) { menu = false }
 }
 
 @Composable
-private fun AlbumArtwork(track: LibraryTrack, selected: Boolean) {
+internal fun AlbumArtwork(track: LibraryTrack, selected: Boolean, modifier: Modifier = Modifier.size(44.dp)) {
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(null, track.stableId) {
         value = withContext(Dispatchers.IO) { ArtworkLoader.load(context, track) }
     }
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(6.dp)),
+        modifier.clip(RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -868,7 +963,7 @@ private fun AlbumArtwork(track: LibraryTrack, selected: Boolean) {
                 contentScale = ContentScale.Crop,
             )
         } else {
-            FallbackArtwork(track.album.take(1).uppercase(), false)
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) { PlayerIcon(R.drawable.ic_disc_3, null, Modifier.fillMaxSize(.55f)) }
         }
         if (selected) {
             Box(
@@ -890,13 +985,14 @@ private fun FallbackArtwork(label: String, selected: Boolean) {
 
 @Composable
 private fun CategoryArtwork(kind: DetailKind) {
-    val glyph = when (kind) {
-        DetailKind.ARTIST -> BrowserSection.ARTISTS.glyph
-        DetailKind.GENRE -> BrowserSection.GENRES.glyph
-        DetailKind.PLAYLIST -> BrowserSection.PLAYLISTS.glyph
-        DetailKind.ALBUM -> BrowserSection.ALBUMS.glyph
+    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        PlayerIcon(when(kind) {
+            DetailKind.ARTIST -> R.drawable.ic_user_round
+            DetailKind.GENRE -> R.drawable.ic_tags
+            DetailKind.PLAYLIST -> R.drawable.ic_list_video
+            DetailKind.ALBUM -> R.drawable.ic_disc_3
+        }, null, Modifier.size(28.dp))
     }
-    FallbackArtwork(glyph, false)
 }
 
 @Composable
@@ -907,9 +1003,39 @@ private fun GroupList(
     listState: LazyListState,
     onOpen: (BrowserDetail) -> Unit,
 ) {
-    val groups = remember(tracks, kind, query) { visibleGroups(tracks, kind, query) }
+    val groups by produceState<List<Pair<String, List<LibraryTrack>>>>(emptyList(), tracks, kind, query) {
+        value = withContext(Dispatchers.Default) { visibleGroups(tracks, kind, query) }
+    }
+    var albumGrid by rememberSaveable { mutableStateOf(true) }
     if (groups.isEmpty()) {
         EmptyMessage("No groups match this search.")
+        return
+    }
+    if (kind == DetailKind.ALBUM) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                PlayerButton(if (albumGrid) R.drawable.ic_list else R.drawable.ic_layout_grid, if (albumGrid) "Show albums as list" else "Show albums in grid") { albumGrid = !albumGrid }
+            }
+            val rows = remember(groups, albumGrid) { groups.chunked(if (albumGrid) 3 else 1) }
+            val labels = remember(rows) { rows.map { it.first().first } }
+            FastScrollableLazyColumn(listState, rows.size, labels, false) {
+                items(rows, key = { it.first().first }) { albums ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        albums.forEach { (name, songs) ->
+                            if (albumGrid) Column(Modifier.weight(1f).combinedClickable(onClick = { onOpen(BrowserDetail(kind, name)) }, onLongClick = {})) {
+                                AlbumArtwork(songs.first(), false, Modifier.fillMaxWidth().aspectRatio(1f))
+                                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                                Text(songs.size.toString() + " songs", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else Row(Modifier.fillMaxWidth().height(58.dp).combinedClickable(onClick = { onOpen(BrowserDetail(kind, name)) }, onLongClick = {}), verticalAlignment = Alignment.CenterVertically) {
+                                AlbumArtwork(songs.first(), false)
+                                Column(Modifier.padding(start = 10.dp)) { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(songs.size.toString() + " songs", style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
+                        if (albumGrid) repeat(3 - albums.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
         return
     }
     val labels = remember(groups) { groups.map { it.first } }
@@ -933,7 +1059,7 @@ private fun GroupList(
                     Text(name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${songs.size} song${if (songs.size == 1) "" else "s"}", style = MaterialTheme.typography.bodySmall)
                 }
-                Text("›", fontSize = 30.sp, modifier = Modifier.padding(end = 16.dp))
+                PlayerIcon(R.drawable.ic_chevron_down, null, Modifier.padding(end = 16.dp).size(22.dp).rotate(-90f))
             }
         }
     }
@@ -945,21 +1071,24 @@ private fun PlaylistList(
     query: String,
     listState: LazyListState,
     onOpen: (BrowserDetail) -> Unit,
+    filter: String,
+    onFilter: (String) -> Unit,
 ) {
-    val playlists = remember(state.playlistScan.playlists, query) {
-        state.playlistScan.playlists.filter { snapshot ->
+    val playlists = remember(state.browserPlaylists, query, filter) {
+        state.browserPlaylists.filter { filter == "All" || it.live == (filter == "Live") }.filter { snapshot ->
             query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
                 snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
         }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.document.displayName })
     }
     if (state.grant is PlaylistTreeGrantState.NotConfigured) {
-        EmptyMessage("Choose your GoneMAD playlist folder in Settings.")
+        EmptyMessage("Choose your playlist folder in Settings.")
         return
     }
-    if (playlists.isEmpty()) {
-        EmptyMessage("No playlists match this search.")
-        return
+    Column(Modifier.fillMaxSize()) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("All","Files","Live").forEach { label -> androidx.compose.material3.FilterChip(filter == label, { onFilter(label) }, label = { Text(label) }) }
     }
+    if (playlists.isEmpty()) Text("No playlists match this view.",Modifier.padding(16.dp))
     FastScrollableLazyColumn(
         listState = listState,
         itemCount = playlists.size,
@@ -984,16 +1113,17 @@ private fun PlaylistList(
                 CategoryArtwork(DetailKind.PLAYLIST)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(snapshot.document.displayName.substringBeforeLast('.'), fontWeight = FontWeight.SemiBold)
+                    Text(snapshot.document.displayName.substringBeforeLast('.') + if (snapshot.live) " · Live" else "", fontWeight = FontWeight.SemiBold)
                     Text(
                         "${songs.size} song${if (songs.size == 1) "" else "s"}" +
-                            if (snapshot.entries.any { it.track == null }) " · missing files" else "",
+                            if (snapshot.sourceError != null) " · source unavailable" else if (snapshot.entries.any { it.track == null }) " · missing files" else "",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                Text("›", fontSize = 30.sp, modifier = Modifier.padding(end = 16.dp))
+                PlayerIcon(R.drawable.ic_chevron_down, null, Modifier.padding(end = 16.dp).size(22.dp).rotate(-90f))
             }
         }
+    }
     }
 }
 
@@ -1005,6 +1135,8 @@ private fun SelectionBar(
     advancedExpanded: Boolean,
     rangeAvailable: Boolean,
     onOptionsExpanded: (Boolean) -> Unit,
+    onQueue: () -> Unit,
+    onPlayNext: () -> Unit,
     onAdvancedExpanded: (Boolean) -> Unit,
     onPlaylist: () -> Unit,
     onSelectAll: () -> Unit,
@@ -1033,7 +1165,9 @@ private fun SelectionBar(
                         SelectionActionLabel("⋮", "Options")
                     }
                     DropdownMenu(expanded = optionsExpanded, onDismissRequest = { onOptionsExpanded(false) }) {
-                        DropdownMenuItem(text = { Text("Playlist") }, onClick = onPlaylist)
+                        DropdownMenuItem(text = { Text("Add/remove from playlists") }, onClick = onPlaylist)
+                        DropdownMenuItem(text = { Text("Add to a queue") }, onClick = onQueue)
+                        DropdownMenuItem(text = { Text("Play after current song") }, onClick = onPlayNext)
                     }
                 }
                 Box {
@@ -1066,20 +1200,20 @@ private fun SelectionBar(
 @Composable
 private fun SelectionActionLabel(glyph: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(glyph, fontSize = 27.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+        PlayerIcon(when(glyph) { "⋮" -> R.drawable.ic_ellipsis; "⊗" -> R.drawable.ic_x; else -> R.drawable.ic_list }, null)
         Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable
-private fun SearchBar(query: String, onQueryChange: (String) -> Unit, onClear: () -> Unit) {
+internal fun SearchBar(query: String, onQueryChange: (String) -> Unit, onClear: () -> Unit) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
         placeholder = { Text("Search in this list…") },
-        leadingIcon = { Text("⌕", fontSize = 26.sp) },
-        trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = onClear) { Text("×", fontSize = 30.sp) } },
+        leadingIcon = { PlayerIcon(R.drawable.ic_search, "Search") },
+        trailingIcon = { if (query.isNotEmpty()) PlayerButton(R.drawable.ic_x, "Clear search", action = onClear) },
         singleLine = true,
     )
 }
@@ -1102,7 +1236,7 @@ private fun SettingsSheet(
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 24.dp),
             ) {
                 item {
                     Row(
@@ -1111,7 +1245,7 @@ private fun SettingsSheet(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        TextButton(onClick = onDismiss) { Text("×", fontSize = 30.sp) }
+                        TextButton(onClick = onDismiss) { PlayerIcon(R.drawable.ic_x, "Close") }
                     }
                     Text("Music folders", style = MaterialTheme.typography.titleMedium)
                 }
@@ -1150,6 +1284,9 @@ private fun SettingsSheet(
                     OutlinedButton(onClick = actions.refreshPlaylists, modifier = Modifier.fillMaxWidth()) {
                         Text("Rescan playlists")
                     }
+                    Spacer(Modifier.height(18.dp))
+                    HeadsetSettingsContent()
+                    AudioRecoveryControl()
                 }
             }
         }
@@ -1161,8 +1298,11 @@ private fun MembershipEditor(
     state: LibraryBrowserState,
     tracks: List<LibraryTrack>,
     actions: LibraryBrowserActions,
+    submitted: Boolean,
+    onSubmit: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val writing = submitted && state.mutation is BrowserMutationState.Working
     var tab by rememberSaveable { mutableStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedUris by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -1180,12 +1320,12 @@ private fun MembershipEditor(
         topBar = {
             Surface(tonalElevation = 2.dp) {
                 Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().height(68.dp).padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().height(60.dp).padding(start = 4.dp, end = 34.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = onBack) { Text("‹", fontSize = 40.sp, lineHeight = 40.sp) }
+                        TextButton(onClick = onBack, enabled = !submitted) { PlayerIcon(R.drawable.ic_chevron_down, "Back", Modifier.size(25.dp).rotate(90f)) }
                         Text("Playlists", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                     Text("${tracks.size} selected", style = MaterialTheme.typography.bodySmall)
@@ -1195,10 +1335,11 @@ private fun MembershipEditor(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)) {
             TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Add") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Remove") })
+                Tab(selected = tab == 0, enabled = !submitted, onClick = { tab = 0 }, text = { Text("Add") })
+                Tab(selected = tab == 1, enabled = !submitted, onClick = { tab = 1 }, text = { Text("Remove") })
             }
             OutlinedTextField(
+                enabled = !submitted,
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -1209,7 +1350,7 @@ private fun MembershipEditor(
                 items(memberships, key = { it.snapshot.document.uri.toString() }) { membership ->
                     val key = membership.snapshot.document.uri.toString()
                     Row(
-                        Modifier.fillMaxWidth().height(48.dp).combinedClickable(
+                        Modifier.fillMaxWidth().height(48.dp).combinedClickable(enabled = !submitted,
                             onClick = {
                                 selectedUris = if (key in selectedUris) selectedUris - key else selectedUris + key
                             },
@@ -1218,6 +1359,7 @@ private fun MembershipEditor(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(
+                            enabled = !submitted,
                             checked = key in selectedUris,
                             onCheckedChange = {
                                 selectedUris = if (it) (selectedUris + key).distinct() else selectedUris - key
@@ -1244,7 +1386,7 @@ private fun MembershipEditor(
                 }
                 if (memberships.isEmpty()) item { Text("No playlists match this view.") }
                 item {
-                    TextButton(onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(enabled = !submitted, onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
                         Text("＋ Create new playlist")
                     }
                 }
@@ -1252,22 +1394,24 @@ private fun MembershipEditor(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
                     onClick = { selectedUris = emptyList() },
-                    enabled = selectedUris.isNotEmpty(),
+                    enabled = selectedUris.isNotEmpty() && !submitted,
                     modifier = Modifier.weight(1f),
                 ) { Text("Clear") }
                 Button(
                     onClick = {
                         val documents = state.playlistScan.playlists.map(PlaylistSnapshot::document)
                             .filter { it.uri.toString() in selectedUris }
+                        onSubmit()
                         actions.applyMembership(
                             if (tab == 0) BatchAction.ADD_ONE else BatchAction.REMOVE_ALL,
                             documents,
                             tracks,
                         )
                     },
-                    enabled = selectedUris.isNotEmpty() && !state.busy,
+                    enabled = selectedUris.isNotEmpty() && !state.busy && !submitted,
                     modifier = Modifier.weight(1f),
-                ) { Text("${if (tab == 0) "Add to" else "Remove from"} ${selectedUris.size}") }
+                ) { if (writing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("${if (tab == 0) "Add to" else "Remove from"} ${selectedUris.size}") }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -1279,6 +1423,7 @@ private fun MembershipEditor(
         supportingText = "The new playlist will contain ${tracks.size} selected song${if (tracks.size == 1) "" else "s"}.",
         onDismiss = { showCreate = false },
         onConfirm = {
+            onSubmit()
             actions.createPlaylist(it, tracks)
             showCreate = false
         },
@@ -1287,7 +1432,7 @@ private fun MembershipEditor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RulesSheet(
+private fun LegacyRulesSheet(
     state: LibraryBrowserState,
     actions: LibraryBrowserActions,
     onDismiss: () -> Unit,
@@ -1408,7 +1553,7 @@ private fun RuleRow(
 }
 
 @Composable
-private fun NameDialog(
+internal fun NameDialog(
     title: String,
     initialName: String,
     confirmLabel: String,
@@ -1439,7 +1584,7 @@ private fun NameDialog(
 }
 
 @Composable
-private fun MutationDialogs(state: LibraryBrowserState, actions: LibraryBrowserActions) {
+private fun MutationDialogs(state: LibraryBrowserState, actions: LibraryBrowserActions, suppressSuccess: Boolean = false) {
     when (val mutation = state.mutation) {
         is BrowserMutationState.ReconfirmationRequired -> AlertDialog(
             onDismissRequest = actions.clearMutationMessage,
@@ -1448,7 +1593,7 @@ private fun MutationDialogs(state: LibraryBrowserState, actions: LibraryBrowserA
             confirmButton = { TextButton(onClick = actions.confirmMutation) { Text("Confirm updated operation") } },
             dismissButton = { TextButton(onClick = actions.clearMutationMessage) { Text("Cancel") } },
         )
-        is BrowserMutationState.Result -> AlertDialog(
+        is BrowserMutationState.Result -> if (!suppressSuccess) AlertDialog(
             onDismissRequest = actions.clearMutationMessage,
             title = { Text("Done") },
             text = { Text(mutation.message) },
@@ -1500,15 +1645,7 @@ private fun currentListTracks(
             DetailKind.PLAYLIST -> playlists
                 .firstOrNull { it.document.uri.toString() == detail.key }
                 ?.let { snapshot ->
-                    val tracks = if (LibrarySearch.matches(snapshot.document.displayName, query)) {
-                        snapshot.resolvedTracks
-                    } else {
-                        snapshot.resolvedTracks.filter { LibrarySearch.matches(it, query) }
-                    }
-                    tracks.sortedWith(
-                        compareBy<LibraryTrack, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
-                            .thenBy(String.CASE_INSENSITIVE_ORDER) { it.artist },
-                    )
+                    displayedPlaylistEntries(snapshot,query).mapNotNull { it.track }
                 }.orEmpty()
             else -> tracks.filter { groupValue(it, detail.kind) == detail.key }
                 .let { tracks ->
@@ -1518,6 +1655,7 @@ private fun currentListTracks(
         }
     }
     return when (section) {
+        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> emptyList()
         BrowserSection.SONGS -> tracks.filter { LibrarySearch.matches(it, query) }
         BrowserSection.ALBUMS -> visibleGroups(tracks, DetailKind.ALBUM, query).flatMap { it.second }
         BrowserSection.ARTISTS -> visibleGroups(tracks, DetailKind.ARTIST, query).flatMap { it.second }
@@ -1555,6 +1693,7 @@ private fun browserStats(
 ): String {
     if (detail != null) return songStats(currentTracks)
     return when (section) {
+        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> ""
         BrowserSection.SONGS -> songStats(currentTracks)
         BrowserSection.ALBUMS -> countLabel(visibleGroups(tracks, DetailKind.ALBUM, query).size, "album")
         BrowserSection.ARTISTS -> countLabel(visibleGroups(tracks, DetailKind.ARTIST, query).size, "artist")
@@ -1588,7 +1727,7 @@ private fun groupValue(track: LibraryTrack, kind: DetailKind): String = when (ki
 }
 
 private fun detailTitle(detail: BrowserDetail?, state: LibraryBrowserState): String? = when (detail?.kind) {
-    DetailKind.PLAYLIST -> state.playlistScan.playlists
+    DetailKind.PLAYLIST -> state.browserPlaylists
         .firstOrNull { it.document.uri.toString() == detail.key }
         ?.document?.displayName?.substringBeforeLast('.')
     DetailKind.ALBUM, DetailKind.ARTIST, DetailKind.GENRE -> detail.key
@@ -1605,11 +1744,15 @@ private fun formatDuration(durationMs: Long): String {
 }
 
 private object ArtworkLoader {
-    private val cache = LruCache<String, Bitmap>(96)
+    private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
+    }
+    private val failed = LruCache<String, Long>(256)
 
     fun load(context: Context, track: LibraryTrack): Bitmap? {
         val cacheKey = track.albumId?.let { "${track.identity.volumeName}:album:$it" } ?: track.stableId
         cache.get(cacheKey)?.let { return it }
+        failed.get(cacheKey)?.let { if (android.os.SystemClock.elapsedRealtime() - it < 60000) return null }
         val bitmap = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 context.contentResolver.loadThumbnail(track.contentUri, Size(160, 160), null)
@@ -1618,7 +1761,11 @@ private object ArtworkLoader {
                     try {
                         setDataSource(context, track.contentUri)
                         embeddedPicture?.let { bytes ->
-                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                            var sample = 1
+                            while (bounds.outWidth / sample > 320 || bounds.outHeight / sample > 320) sample *= 2
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
                         }
                     } finally {
                         release()
@@ -1626,7 +1773,24 @@ private object ArtworkLoader {
                 }
             }
         }.getOrNull()
-        if (bitmap != null) cache.put(cacheKey, bitmap)
+        if (bitmap != null) cache.put(cacheKey, bitmap) else failed.put(cacheKey, android.os.SystemClock.elapsedRealtime())
         return bitmap
     }
+}
+
+private fun sectionIcon(section: BrowserSection): Int = when(section) {
+    BrowserSection.QUEUES -> R.drawable.ic_list_music
+    BrowserSection.NOW_PLAYING -> R.drawable.ic_circle_play
+    BrowserSection.SONGS -> R.drawable.ic_music_2
+    BrowserSection.ALBUMS -> R.drawable.ic_disc_3
+    BrowserSection.ARTISTS -> R.drawable.ic_user_round
+    BrowserSection.GENRES -> R.drawable.ic_tags
+    BrowserSection.PLAYLISTS -> R.drawable.ic_list_video
+}
+
+private fun displayedPlaylistEntries(snapshot: PlaylistSnapshot, query: String): List<io.github.shmemcat.shmemplay.playlists.PlaylistEntry> {
+    if(snapshot.sourceError != null) return emptyList()
+    val all = LibrarySearch.matches(snapshot.document.displayName,query)
+    return snapshot.entries.filter { entry -> query.isBlank() || all || entry.track?.let { LibrarySearch.matches(it,query) } == true || LibrarySearch.matches(entry.normalizedPath,query) }
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.track?.title ?: it.normalizedPath.substringAfterLast('/') })
 }
