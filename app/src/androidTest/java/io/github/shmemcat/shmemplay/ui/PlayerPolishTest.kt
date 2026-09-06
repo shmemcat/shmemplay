@@ -107,6 +107,7 @@ class PlayerPolishTest {
                 ))
             }
         }
+        compose.onNodeWithContentDescription("All Songs").performClick()
         compose.onNodeWithContentDescription("Options for Fixture song").performClick()
         compose.onNodeWithText("Add/remove from playlists").performClick()
         compose.onNodeWithText("Fixture.m3u").performTouchInput { click() }

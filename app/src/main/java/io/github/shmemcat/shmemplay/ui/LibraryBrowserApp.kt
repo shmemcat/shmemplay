@@ -163,7 +163,7 @@ fun LibraryBrowserApp(
 ) {
     val playerState = playerRepository?.state?.collectAsState()?.value ?: PlayerUiState()
     var addSelectionToQueue by remember { mutableStateOf(false) }
-    var sectionName by rememberSaveable { mutableStateOf(BrowserSection.SONGS.name) }
+    var sectionName by rememberSaveable { mutableStateOf(BrowserSection.NOW_PLAYING.name) }
     var detailKind by rememberSaveable { mutableStateOf<String?>(null) }
     var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
