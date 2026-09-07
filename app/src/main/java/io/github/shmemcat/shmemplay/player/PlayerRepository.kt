@@ -46,6 +46,7 @@ class PlayerRepository internal constructor(context: Context) {
     private val mutableState = MutableStateFlow(PlayerUiState())
     val state = mutableState.asStateFlow()
     private var engine: PlaybackEngine? = null
+    private val restored = CompletableDeferred<Unit>()
 
     init {
         scope.launch {
@@ -65,8 +66,10 @@ class PlayerRepository internal constructor(context: Context) {
                 }
                 mutableState.value = mutableState.value.copy(book = restored, ready = true)
                 engine?.apply(restored, false, true)
+                this@PlayerRepository.restored.complete(Unit)
             } catch (failure: Exception) {
                 mutableState.value = mutableState.value.copy(error = "Saved queues could not be read. The original file was kept: ${failure.message}")
+                restored.completeExceptionally(failure)
             }
             for (command in commands) try { command() } catch (failure: Exception) {
                 mutableState.value = mutableState.value.copy(error = "Player change failed: ${failure.message}")
@@ -77,6 +80,48 @@ class PlayerRepository internal constructor(context: Context) {
         engine = value
         mutableState.value = mutableState.value.copy(connected = true)
         if (state.value.ready) value.apply(state.value.book, false, true)
+    }
+    suspend fun awaitBook(): QueueBook {
+        restored.await()
+        return state.value.book
+    }
+
+    /** Car/controller commands use the same serialization and identity-checked engine as the phone. */
+    internal suspend fun selectFromController(selection: QueueMediaLibrary.Selection, positionMs: Long?) = serialized {
+        val before = capture()
+        val queue = before.queues.firstOrNull { it.id == selection.queueId }
+            ?: error("This saved queue no longer exists")
+        require(selection.entryId == null || queue.entries.any { it.id == selection.entryId && !it.unavailable }) {
+            "This saved song is unavailable"
+        }
+        var next = before.activate(queue.id, selection.entryId)
+        require(next.active?.current?.unavailable == false) { "This queue has no playable song" }
+        if (positionMs != null) next = next.edit(queue.id) { it.copy(positionMs = positionMs.coerceAtLeast(0)) }
+        next = next.copy(revision = before.revision + 1)
+        withContext(Dispatchers.IO) {
+            atomicWrite(file) { QueueCodec.write(next, it) }
+            progress.delete()
+        }
+        mutableState.value = state.value.copy(book = next, error = null)
+        engine?.apply(next, false, true)
+        capture()
+        Unit
+    }
+
+    internal suspend fun setPlayingFromController(play: Boolean) = serialized {
+        engine?.apply(capture(), play, false)
+        capture()
+        Unit
+    }
+
+    private suspend fun serialized(action: suspend () -> Unit) {
+        restored.await()
+        val completion = CompletableDeferred<Unit>()
+        commands.send {
+            try { action(); completion.complete(Unit) }
+            catch (failure: Exception) { completion.completeExceptionally(failure) }
+        }
+        completion.await()
     }
     fun detach(value: PlaybackEngine) {
         if (engine !== value) return

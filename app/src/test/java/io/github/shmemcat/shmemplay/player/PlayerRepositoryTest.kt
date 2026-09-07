@@ -12,11 +12,46 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.*
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[28])
 @LooperMode(LooperMode.Mode.PAUSED)
 class PlayerRepositoryTest {
+    @Test fun controllerSelectionAndPlayAreSerializedAndPersistTheSameQueue() {
+        val directory = Files.createTempDirectory("car-queue-test").toFile()
+        val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
+        val saved = QueueBook().create("one", "One", listOf(QueueTrack("a", "content://a", "A")), "a")
+            .edit("one") { it.copy(positionMs = 12345) }
+            .create("two", "Two", listOf(QueueTrack("a", "content://a", "A"), QueueTrack("b", "content://b", "B")), "a")
+        File(directory, "player-queues-v1.bin").outputStream().use { QueueCodec.write(saved, it) }
+        val repository = PlayerRepository(context)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try {
+            val engine = Engine(); repository.attach(engine)
+            // Issue commands before disk restoration finishes, as a cold car/headset connection does.
+            val selection = scope.async { repository.selectFromController(QueueMediaLibrary.Selection("one", null), null) }
+            val play = scope.async { repository.setPlayingFromController(true) }
+            waitUntil { selection.isCompleted && play.isCompleted }
+            runBlocking { selection.await(); play.await() }
+            assertTrue(engine.playing)
+            assertEquals("one", engine.queue)
+            assertEquals(12345, engine.positionMs)
+            assertEquals(2, repository.state.value.book.queues.size)
+            val next = scope.async { repository.selectFromController(QueueMediaLibrary.Selection("two", "b"), null) }
+            waitUntil { next.isCompleted }; runBlocking { next.await() }
+            assertFalse(engine.playing) // prepare-from-ID must not start audio itself.
+            assertEquals("b", engine.current)
+            assertEquals(0, engine.positionMs)
+            assertEquals(12345, repository.state.value.book.queues.first().positionMs)
+            val revision = repository.state.value.book.revision
+            val invalid = scope.async { runCatching { repository.selectFromController(QueueMediaLibrary.Selection("two", "gone"), null) } }
+            waitUntil { invalid.isCompleted }
+            assertTrue(runBlocking { invalid.await() }.isFailure)
+            assertEquals(revision, repository.state.value.book.revision)
+            assertEquals("two", File(directory, "player-queues-v1.bin").inputStream().use(QueueCodec::read).activeId)
+        } finally { scope.cancel(); repository.close(); directory.deleteRecursively() }
+    }
     private class Engine:PlaybackEngine {
         override var positionMs=0L
         override var playing=false

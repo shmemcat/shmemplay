@@ -19,6 +19,7 @@ import io.github.shmemcat.shmemplay.player.HeadsetSettings
     CheckOption("Resume on wired reconnect", settings.resumeWired) { save(settings.copy(resumeWired=it)) }
     Text("Reconnect resumes only the song paused by a disconnection. A manual pause or queue switch cancels it.",style=MaterialTheme.typography.bodySmall)
     CheckOption("Block unsolicited external play commands", settings.preventAutoplay) { save(settings.copy(preventAutoplay=it)) }
+    Text("Android Auto, Android media controls, and trusted music widgets remain available. Android Auto chooses which app to resume; play Shmemplay in the car to make it your most recently used player.",style=MaterialTheme.typography.bodySmall)
     val actions=listOf("Next","Previous","Play / pause","None")
     TextButton(modifier=Modifier.fillMaxWidth(),onClick={save(settings.copy(doublePress=actions[(actions.indexOf(settings.doublePress)+1)%actions.size]))}) {Text("Double press: " + settings.doublePress)}
     TextButton(modifier=Modifier.fillMaxWidth(),onClick={save(settings.copy(triplePress=actions[(actions.indexOf(settings.triplePress)+1)%actions.size]))}) {Text("Triple press: " + settings.triplePress)}

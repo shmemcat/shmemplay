@@ -12,23 +12,24 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingSimpleBasePlayer
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaLibraryService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import io.github.shmemcat.shmemplay.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @androidx.annotation.OptIn(UnstableApi::class)
-class PlaybackService : MediaSessionService(), PlaybackEngine {
+class PlaybackService : MediaLibraryService(), PlaybackEngine {
     private lateinit var exo: ExoPlayer
     private lateinit var repository: PlayerRepository
-    private var session: MediaSession? = null
+    private var session: MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var loadedQueueId: String? = null
     private val reconnect = DisconnectResumeGuard()
@@ -91,12 +92,18 @@ class PlaybackService : MediaSessionService(), PlaybackEngine {
                 return state.buildUpon().setAvailableCommands(state.availableCommands.buildUpon()
                     .add(Player.COMMAND_SEEK_TO_NEXT).add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                     .add(Player.COMMAND_SEEK_TO_PREVIOUS).add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                    .remove(Player.COMMAND_CHANGE_MEDIA_ITEMS).remove(Player.COMMAND_SET_MEDIA_ITEM)
+                    .remove(Player.COMMAND_CHANGE_MEDIA_ITEMS).add(Player.COMMAND_SET_MEDIA_ITEM)
                     .remove(Player.COMMAND_SET_REPEAT_MODE).remove(Player.COMMAND_SET_SHUFFLE_MODE).build()).build()
             }
             override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
                 reconnect.invalidate()
-                return super.handleSetPlayWhenReady(playWhenReady)
+                return serviceScope.future { repository.setPlayingFromController(playWhenReady) }
+            }
+            override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> = serviceScope.future {
+                require(mediaItems.size == 1 && (startIndex == 0 || startIndex == C.INDEX_UNSET))
+                val selection = QueueMediaLibrary.selection(mediaItems.single().mediaId)
+                    ?: error("Unknown saved queue item")
+                repository.selectFromController(selection, startPositionMs.takeUnless { it == C.TIME_UNSET })
             }
             override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> {
                 when (seekCommand) {
@@ -108,29 +115,25 @@ class PlaybackService : MediaSessionService(), PlaybackEngine {
             }
         }
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        session = MediaSession.Builder(this, transport).setSessionActivity(open)
-            .setCallback(object : MediaSession.Callback {
+        val callback = object : QueueLibraryCallback(repository, serviceScope, headset, packageName) {
                 override fun onMediaButtonEvent(session: MediaSession, controllerInfo: MediaSession.ControllerInfo, intent: Intent): Boolean {
                     @Suppress("DEPRECATION") val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
-                    if(event.keyCode != KeyEvent.KEYCODE_HEADSETHOOK && event.keyCode != KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) return false
+                    if(event.keyCode != KeyEvent.KEYCODE_HEADSETHOOK) return false
+                    if (!canControl(session, controllerInfo)) return true
                     if(event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                         reconnect.invalidate();clicks++;handler.removeCallbacks(clickAction);handler.postDelayed(clickAction,400)
                     }
                     return true
                 }
-                override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
-                    if (playerCommand == Player.COMMAND_PLAY_PAUSE && headset.load().preventAutoplay &&
-                        controller.packageName != packageName && !controller.isTrusted && !session.isMediaNotificationController(controller)) {
-                        return androidx.media3.session.SessionResult.RESULT_ERROR_PERMISSION_DENIED
-                    }
-                    return androidx.media3.session.SessionResult.RESULT_SUCCESS
-                }
-                override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-                    return if (controller.packageName == packageName || controller.isTrusted || !headset.load().preventAutoplay) super.onConnect(session, controller)
-                    else MediaSession.ConnectionResult.reject()
-                }
-            }).build()
+            }
+        session = MediaLibrarySession.Builder(this, transport, callback).setSessionActivity(open).build()
+        addSession(session!!)
         repository.attach(this)
+        serviceScope.launch {
+            repository.state.map { it.book.revision }.distinctUntilChanged().collect {
+                session?.let { callback.notifyQueueChanges(it, repository.state.value.book) }
+            }
+        }
         audioManager.registerAudioDeviceCallback(devices,handler)
         serviceScope.launch {
             var tick = 0
@@ -142,7 +145,7 @@ class PlaybackService : MediaSessionService(), PlaybackEngine {
             }
         }
     }
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun apply(book: QueueBook, play: Boolean?, seek: Boolean) {
         val q = book.active
@@ -155,9 +158,7 @@ class PlaybackService : MediaSessionService(), PlaybackEngine {
         if(changed || seek || play != null) reconnect.invalidate()
         if (changed) {
             val continuePlaying = play ?: exo.playWhenReady
-            val item = MediaItem.Builder().setMediaId(current.id).setUri(current.uri)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(current.title).setArtist(current.artist)
-                    .setAlbumTitle(current.album).setIsPlayable(true).setIsBrowsable(false).build()).build()
+            val item = current.mediaItem()
             val dataSources = androidx.media3.datasource.DataSource.Factory {
                 IdentityCheckedDataSource(this,current,androidx.media3.datasource.DefaultDataSource.Factory(this).createDataSource())
             }

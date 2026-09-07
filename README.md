@@ -27,6 +27,9 @@ does not request network access.
 
 - **Native playback:** background playback, Android media controls, audio-focus
   handling, route-disconnect behavior, and configurable headset button actions.
+- **Android Auto and widgets:** browse and resume saved queues in the car,
+  search queued songs, and resume through Android media buttons. Standard player
+  discovery supports widgets such as KWGT. See [setup and device verification](docs/android-auto.md).
 - **Persistent queues:** keep multiple independent queues, each with its own
   track, position, order, shuffle state, repeat/end policy, and stop-after marker.
   Search and reorder a queue, switch without losing your place, or export one as
