@@ -33,15 +33,26 @@ internal open class QueueLibraryCallback(
         }
     }
     internal fun canControl(session: MediaSession, controller: MediaSession.ControllerInfo): Boolean =
-        controller.packageName == packageName || controller.isTrusted || session.isMediaNotificationController(controller) ||
-            session.isAutoCompanionController(controller) || !headset.load().preventAutoplay
+        controller.isTrusted || session.isMediaNotificationController(controller) ||
+            (controller.isPackageNameVerified &&
+                (controller.packageName == packageName || session.isAutoCompanionController(controller))) ||
+            !headset.load().preventAutoplay
 
     override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-        // Metadata readers must not be rejected merely because unsolicited playback is blocked.
-        return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
+        // Media3 1.11 defaults untrusted clients to read-only, even when our policy permits
+        // them. Advertise transport here: disallowed commands never reach the callback below.
+        val allowed = canControl(session, controller)
+        android.util.Log.d("ShmemplaySession", "connect package=${controller.packageName} trusted=${controller.isTrusted} verified=${controller.isPackageNameVerified} transport=$allowed")
+        return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+            .setAvailablePlayerCommands(if (allowed) MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+                else MediaSession.ConnectionResult.DEFAULT_UNTRUSTED_PLAYER_COMMANDS)
+            .setAvailableSessionCommands(if (allowed) MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                else MediaSession.ConnectionResult.DEFAULT_UNTRUSTED_SESSION_AND_LIBRARY_COMMANDS)
+            .build()
     }
 
     override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
+        android.util.Log.d("ShmemplaySession", "command package=${controller.packageName} command=$playerCommand allowed=${canControl(session, controller)}")
         return if (!canControl(session, controller) && playerCommand !in setOf(
                 Player.COMMAND_GET_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_TIMELINE,
                 Player.COMMAND_GET_METADATA, Player.COMMAND_GET_TRACKS)) SessionResult.RESULT_ERROR_PERMISSION_DENIED

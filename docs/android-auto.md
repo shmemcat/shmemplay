@@ -79,9 +79,56 @@ updated at the next song transition. No widget design changes were needed.
 - The APK was installed as a same-key, in-place update. The previous APK is
   retained locally at `app/build/installed-before-android-auto.apk`.
 
-Physical Android Auto launcher rendering, voice recognition in the car,
-plug-in autoplay selection, and reconnect behavior still require a car test.
-The native browser test verifies the service protocol, not a head-unit UI.
+The original native browser test runs under the app's UID. It verifies the
+service protocol and saved queue preparation, but cannot establish external
+controller permissions or Android Auto launcher behavior.
+
+## Follow-up car diagnosis, September 7, 2026
+
+The physical car test still showed only a media card, with Spotify selected,
+no Shmemplay shortcut, and an ineffective Play button. A media card and audio
+output were already possible before car integration; they are not acceptance
+criteria for a dedicated Android Auto app.
+
+On the connected Samsung, Android Auto's **Start music automatically** was
+already enabled. Developer mode was off and Shmemplay was absent from
+**Customize launcher**. Enabled developer mode and its **Unknown sources**
+option for this locally installed development APK.
+
+Google's Desktop Head Unit (DHU 2.0, headless over ADB) then reproduced a real
+Android Auto connection using the phone's Google Android Auto app. Before
+installing further code changes, Shmemplay appeared in the car launcher, opened
+at the saved 0:14 position, accepted Play and Pause, appeared in the shortcut
+bar, and resumed automatically after disconnect/reconnect. This isolates the
+development-app discovery setting as the main observed issue on this phone.
+
+Also fixed an independent Media3 1.11 permission bug: the default connection
+builder grants untrusted controllers read-only commands. Our playback policy
+allowed Android Auto and optionally other external controllers, but did not
+advertise those grants, so their commands could be discarded before reaching
+the command callback. The session now explicitly grants transport/library
+commands to policy-authorized controllers. Package-specific exceptions require
+a verified package name; blocked readers retain read-only access. Five tests
+cover these cases; two failed before the fix. Actual Google Android Auto on
+this Samsung reported `trusted=true`, so this was not its immediate blocker.
+
+Added the monochrome Android Auto attribution icon and explicit service
+label/icon. The existing launcher vector already rendered correctly once the
+development app became discoverable. Diagnostic log tag `ShmemplaySession`
+records controller identity, trust, and command grants, without song metadata.
+
+After the same-key in-place APK update, with the app process absent, reconnecting
+DHU started the service and automatically played the saved song from its 78.4s
+checkpoint without opening the phone app. Dashboard Play/Pause, the shortcut
+icon, the monochrome card icon, and Current queue/Saved queues browsing worked.
+The 118 domain/app JVM tests passed, along with lint (0 errors, 38 warnings),
+debug APK and instrumentation APK builds. The prior APK is retained locally at
+`app/build/installed-before-car-controls-fix.apk`.
+
+The physical head unit still needs a follow-up plug-in test. DHU verifies actual
+Android Auto software and external commands, but not the car's USB/Bluetooth
+connection timing or voice recognition. Android Auto's development setting must
+remain enabled for this sideloaded build; head unit server is only for DHU tests.
 
 ## References
 
@@ -89,5 +136,8 @@ The native browser test verifies the service protocol, not a head-unit UI.
 - [Media3 library services](https://developer.android.com/media/media3/session/serve-content)
 - [Playback resumption](https://developer.android.com/media/media3/session/background-playback)
 - [Testing development apps in cars](https://developer.android.com/training/cars/testing)
+- [Desktop Head Unit testing](https://developer.android.com/training/cars/testing/dhu)
+- [Media3 controller command defaults](https://developer.android.com/reference/androidx/media3/session/MediaSession.ConnectionResult)
+- [Car launcher and attribution icons](https://developer.android.com/training/cars/media/configure-manifest)
 - [Kustom music troubleshooting](https://docs.kustom.rocks/docs/common_issues/music_player/)
 - [Kustom developer discussion of player detection](https://forum.kustom.rocks/t/media-cover-art-issue/5725)

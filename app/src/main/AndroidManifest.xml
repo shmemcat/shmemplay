@@ -17,7 +17,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Shmemplay">
         <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
-        <service android:name=".player.PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
+        <meta-data android:name="androidx.car.app.TintableAttributionIcon" android:resource="@drawable/ic_disc_3" />
+        <service android:name=".player.PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback"
+            android:icon="@drawable/ic_launcher" android:label="@string/app_name">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
