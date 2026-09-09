@@ -126,11 +126,11 @@ data class QueueBook(
     fun delete(id: String): QueueBook {
         val index = queues.indexOfFirst { it.id == id }
         if (index < 0) return this
-        val successor = queues.drop(index + 1).firstOrNull { it.entries.any { t -> !t.unavailable } }
+        val successor = queues.getOrNull(index - 1) ?: queues.getOrNull(index + 1)
         val remaining = queues.filterNot { it.id == id }
         val result = copy(queues = remaining,
             activeId = if (activeId == id) successor?.id else activeId,
-            viewedId = if (viewedId == id) (successor ?: remaining.lastOrNull())?.id else viewedId)
+            viewedId = if (viewedId == id) successor?.id else viewedId)
         return if (activeId == id && successor != null) result.activate(successor.id) else result
     }
     fun reordered(order: List<String>): QueueBook {

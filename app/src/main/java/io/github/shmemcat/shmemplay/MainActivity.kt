@@ -106,6 +106,6 @@ class MainActivity : ComponentActivity() {
     }
     override fun onResume() {
         super.onResume()
-        if (firstResume) firstResume = false else browserViewModel.refreshLibrary()
+        if (firstResume) firstResume = false else browserViewModel.revalidateAccess()
     }
 }

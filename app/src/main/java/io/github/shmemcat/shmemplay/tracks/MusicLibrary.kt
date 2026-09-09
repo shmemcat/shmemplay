@@ -8,8 +8,6 @@ import android.provider.MediaStore
 import io.github.shmemcat.shmemplay.domain.PhonePathV1
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.Normalizer
-import java.util.Locale
 
 data class LibraryTrack(
     val identity: MediaStoreIdentity,
@@ -23,7 +21,7 @@ data class LibraryTrack(
     val durationMs: Long,
     val albumId: Long?,
 ) {
-    val stableId: String get() = "${identity.volumeName}:${identity.mediaId}"
+    val stableId: String = "${identity.volumeName}:${identity.mediaId}"
     val folderRoot: String get() = relativePath
         ?.trim('/')
         ?.substringBefore('/')
@@ -113,7 +111,7 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                         ),
                     )
                 }
-            }
+            } ?: error("media provider returned no library cursor")
         }
     }
 
@@ -211,16 +209,7 @@ object LibrarySearch {
         return terms.all(searchable::contains)
     }
 
-    fun normalize(value: String): String = Normalizer.normalize(
-        value.replace('’', '\'').replace('‘', '\''),
-        Normalizer.Form.NFD,
-    ).asSequence()
-        .filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
-        .filterNot { it == '\'' }
-        .joinToString("")
-        .lowercase(Locale.ROOT)
-        .trim()
-        .replace(Regex("\\s+"), " ")
+    fun normalize(value: String): String = io.github.shmemcat.shmemplay.domain.SearchText.normalize(value)
 }
 
 private fun Throwable.safeLibraryReason(): String = when (this) {

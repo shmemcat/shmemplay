@@ -173,8 +173,8 @@ class PlayerRepository internal constructor(context: Context) {
         if (tracks.isEmpty()) return
         change(true, true) { it.createShuffled(UUID.randomUUID().toString(), name, tracks.map(LibraryTrack::toQueueTrack)) }
     }
-    fun createAdditional(tracks: List<LibraryTrack>) = change { before ->
-        if (tracks.isEmpty()) before else before.create(UUID.randomUUID().toString(), "New queue", tracks.map { it.toQueueTrack() }, tracks.first().stableId).copy(activeId = before.activeId)
+    fun createAdditional(tracks: List<LibraryTrack>, name: String = "New queue") = change { before ->
+        if (tracks.isEmpty()) before else before.create(UUID.randomUUID().toString(), name, tracks.map { it.toQueueTrack() }, tracks.first().stableId).copy(activeId = before.activeId)
     }
     fun createSnapshot(name: String, tracks: List<QueueTrack>, start: String) = change(true, true) {
         it.create(UUID.randomUUID().toString(), name, tracks, start)

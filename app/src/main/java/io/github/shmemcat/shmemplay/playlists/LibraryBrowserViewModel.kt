@@ -2,10 +2,6 @@ package io.github.shmemcat.shmemplay.playlists
 
 import android.app.Application
 import android.content.Context
-import android.database.ContentObserver
-import android.os.Handler
-import android.os.Looper
-import android.provider.MediaStore
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
@@ -30,9 +26,11 @@ import io.github.shmemcat.shmemplay.storage.TreePlaylistDocumentStorageFactory
 import io.github.shmemcat.shmemplay.tracks.LibraryTrack
 import io.github.shmemcat.shmemplay.tracks.MediaStoreMusicLibraryRepository
 import io.github.shmemcat.shmemplay.tracks.MusicLibraryResult
+import io.github.shmemcat.shmemplay.tracks.AudioPermissionPolicy
 import io.github.shmemcat.shmemplay.domain.PlaylistRuleNode
 import io.github.shmemcat.shmemplay.domain.NestedPlaylistRules
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -47,9 +45,8 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
     private val documentStorage = TreePlaylistDocumentStorageFactory(application)
     private val recipes = PlaylistRecipeStore(application)
     private val localRecipes = LocalPlaylistRecipes(application)
+    private val snapshots = LibrarySnapshotStore(application)
     private var playlistsJob: Job? = null
-    private var observedTree: android.net.Uri? = null
-    private val playlistObserver = object : ContentObserver(Handler(Looper.getMainLooper())) { override fun onChange(selfChange: Boolean) { refreshPlaylists() } }
     private val coordinator = MultiTargetOperationCoordinator(
         storageResolver = PlaylistDocumentStorageResolver(::openDiscoveredStorage),
         backups = ExactByteBackupRepository(application),
@@ -65,26 +62,48 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
     private var pendingPreview: BatchPreview? = null
     private var libraryJob: Job? = null
     private var recoveryChecked = false
-    private val mediaObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            refreshLibrary()
-        }
-    }
 
     val state: State<LibraryBrowserState> = mutableState
 
     init {
-        application.contentResolver.registerContentObserver(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            true,
-            mediaObserver,
+        mutableState.value = mutableState.value.copy(loadingLibrary = true)
+        libraryJob = viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { snapshots.load() }
+            if (cached == null) {
+                refreshLibrary()
+            } else if (!AudioPermissionPolicy.isGranted(application)) {
+                mutableState.value = mutableState.value.copy(permissionRequired = true, loadingLibrary = false)
+            } else {
+                showTracks(cached.tracks)
+                refreshPlaylists()
+            }
+        }
+    }
+
+    private fun showTracks(tracks: List<LibraryTrack>) {
+        val roots = tracks.map(LibraryTrack::folderRoot).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
+        val included = (folderSettings.load() ?: roots.toSet()).intersect(roots.toSet())
+        mutableState.value = mutableState.value.copy(
+            permissionRequired = false, loadingLibrary = false, allTracks = tracks,
+            availableFolderRoots = roots, includedFolderRoots = included, error = null,
         )
-        refreshLibrary()
+    }
+
+    /** Preload M3U membership on return; the song index only changes on explicit rescans. */
+    fun revalidateAccess() {
+        val permissionRequired = !AudioPermissionPolicy.isGranted(getApplication())
+        val previous = mutableState.value
+        mutableState.value = previous.copy(permissionRequired = permissionRequired, grant = treeSettings.revalidate())
+        if (previous.permissionRequired && !permissionRequired) refreshLibrary()
+        else if (!permissionRequired && !previous.loadingLibrary && previous.mutation !is BrowserMutationState.Working) refreshPlaylists()
     }
 
     fun refreshLibrary() {
         libraryJob?.cancel()
-        mutableState.value = mutableState.value.copy(loadingLibrary = true, error = null)
+        playlistsJob?.cancel()
+        snapshots.invalidate()
+        val generation = snapshots.generation
+        mutableState.value = mutableState.value.copy(loadingLibrary = true, loadingPlaylists = false, error = null)
         libraryJob = viewModelScope.launch {
             when (val result = library.loadAll()) {
                 MusicLibraryResult.PermissionRequired -> mutableState.value = mutableState.value.copy(
@@ -96,29 +115,12 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
                     error = result.reason,
                 )
                 is MusicLibraryResult.Success -> {
-                    val roots = result.tracks.map(LibraryTrack::folderRoot)
-                        .distinct()
-                        .sortedWith(String.CASE_INSENSITIVE_ORDER)
-                    val stored = folderSettings.load()
-                    val included = (stored ?: roots.toSet()).intersect(roots.toSet())
-                    mutableState.value = mutableState.value.copy(
-                        permissionRequired = false,
-                        loadingLibrary = false,
-                        allTracks = result.tracks,
-                        availableFolderRoots = roots,
-                        includedFolderRoots = included,
-                        error = null,
-                    )
+                    showTracks(result.tracks)
                     refreshPlaylists()
+                    persistSnapshot(generation)
                 }
             }
         }
-    }
-
-    override fun onCleared() {
-        getApplication<Application>().contentResolver.unregisterContentObserver(mediaObserver)
-        getApplication<Application>().contentResolver.unregisterContentObserver(playlistObserver)
-        super.onCleared()
     }
 
     fun onPlaylistTreeChanged() {
@@ -151,15 +153,13 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
             livePlaylists = mutableState.value.livePlaylists.map { it.copy(sourceError = "Checking source playlists…") },
             error = null,
         )
-        val treeUri = (grant as? PlaylistTreeGrantState.Valid)?.treeUri ?: return
-        if (observedTree != treeUri) {
-            getApplication<Application>().contentResolver.unregisterContentObserver(playlistObserver)
-            val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
-            getApplication<Application>().contentResolver.registerContentObserver(children,true,playlistObserver)
-            observedTree = treeUri
-        }
+        val treeUri = (grant as? PlaylistTreeGrantState.Valid)?.treeUri
         playlistsJob = viewModelScope.launch {
-            delay(350)
+            if (treeUri == null) {
+                mutableState.value = mutableState.value.copy(playlistScan = PlaylistLibraryScan(emptyList(), emptyList()), loadingPlaylists = false)
+                refreshLivePlaylists()
+                return@launch
+            }
             val libraryTracks = mutableState.value.tracks
             val result = withContext(Dispatchers.IO) {
                 treeService.discoverDirectChildren(treeUri).map { documents ->
@@ -181,6 +181,17 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
                 ) },
             )
         }
+    }
+
+    private suspend fun persistSnapshot(generation: Long) {
+        val current = mutableState.value
+        if (current.loadingLibrary || current.permissionRequired) return
+        val snapshot = LibrarySnapshot(current.allTracks)
+        runCatching { withContext(Dispatchers.IO) { snapshots.save(snapshot, generation) } }
+            .onFailure {
+                if (it is CancellationException) throw it
+                mutableState.value = mutableState.value.copy(error = "Could not save the library cache: ${it.message}")
+            }
     }
 
     fun createPlaylist(name: String, tracks: List<LibraryTrack>, recipe: SavedPlaylistRecipe? = null) {
@@ -499,11 +510,13 @@ class LibraryBrowserViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private fun rescanLoadedPlaylists() {
-        val documents = mutableState.value.playlistScan.playlists.map(PlaylistSnapshot::document)
-        if (documents.isEmpty()) return
+        val before = mutableState.value
         viewModelScope.launch {
-            val scan = withContext(Dispatchers.IO) { playlistScanner.scan(documents, mutableState.value.tracks) }
-            mutableState.value = mutableState.value.copy(playlistScan = scan)
+            val scan = withContext(Dispatchers.Default) { LibrarySnapshotStore.resolve(before.playlistScan, before.tracks) }
+            if (mutableState.value.playlistScan === before.playlistScan && mutableState.value.includedFolderRoots == before.includedFolderRoots) {
+                mutableState.value = mutableState.value.copy(playlistScan = scan)
+                refreshLivePlaylists()
+            }
         }
     }
 

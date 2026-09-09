@@ -18,6 +18,32 @@ import kotlinx.coroutines.*
 @Config(sdk=[28])
 @LooperMode(LooperMode.Mode.PAUSED)
 class PlayerRepositoryTest {
+    @Test fun deletingActiveResumesPreviousQueueAtItsOwnPositionAndPreservesPlayState() {
+        for (playing in listOf(true, false)) {
+            val directory = Files.createTempDirectory("queue-delete-test").toFile()
+            val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
+            val saved = QueueBook().create("one", "One", listOf(QueueTrack("a", "content://a", "A")), "a")
+                .edit("one") { it.copy(positionMs = 12345) }
+                .create("two", "Two", listOf(QueueTrack("b", "content://b", "B")), "b")
+            File(directory, "player-queues-v1.bin").outputStream().use { QueueCodec.write(saved, it) }
+            val repository = PlayerRepository(context)
+            try {
+                waitUntil { repository.state.value.ready }
+                val engine = Engine(); repository.attach(engine)
+                engine.playing = playing; engine.positionMs = 45678
+                repository.delete("two")
+                waitUntil { engine.queue == "one" }
+                assertEquals("a", engine.current)
+                assertEquals(12345, engine.positionMs)
+                assertEquals(playing, engine.playing)
+                assertEquals("one", File(directory, "player-queues-v1.bin").inputStream().use(QueueCodec::read).activeId)
+                repository.delete("one")
+                waitUntil { repository.state.value.book.queues.isEmpty() }
+                assertNull(engine.current)
+                assertFalse(engine.playing)
+            } finally { repository.close(); directory.deleteRecursively() }
+        }
+    }
     @Test fun controllerSelectionAndPlayAreSerializedAndPersistTheSameQueue() {
         val directory = Files.createTempDirectory("car-queue-test").toFile()
         val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }

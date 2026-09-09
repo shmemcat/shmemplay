@@ -29,12 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import io.github.shmemcat.shmemplay.R
 import io.github.shmemcat.shmemplay.player.*
-import io.github.shmemcat.shmemplay.tracks.LibrarySearch
 import io.github.shmemcat.shmemplay.tracks.LibraryTrack
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
-internal data class SongPlaybackActions(val repository: PlayerRepository, val navigate: (String,String) -> Unit = { _, _ -> }, val play: (LibraryTrack) -> Unit)
+internal data class SongPlaybackActions(val repository: PlayerRepository, val queueName: String = "New queue", val navigate: (String,String) -> Unit = { _, _ -> }, val play: (LibraryTrack) -> Unit)
 internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> { null }
 @Composable internal fun PlayerIcon(id: Int, label: String?, modifier: Modifier = Modifier.size(25.dp)) {
     Icon(painterResource(id), label, modifier)
@@ -116,7 +113,7 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
     if (policy) QueuePolicyDialog(q, repository) { policy = false }
 }
 
-@Composable internal fun QueuesScreen(state: PlayerUiState, repository: PlayerRepository, onPlaylist: (LibraryTrack) -> Unit, save: (String, List<LibraryTrack>) -> Unit, query: String, selected: Set<String>, onToggle: (String) -> Unit, onSelect: (String) -> Unit) {
+@Composable internal fun QueuesScreen(state: PlayerUiState, repository: PlayerRepository, onPlaylist: (LibraryTrack) -> Unit, save: (String, List<LibraryTrack>) -> Unit, query: String, rows: List<QueueTrack>, selected: Set<String>, onToggle: (String) -> Unit, onSelect: (String) -> Unit) {
     val q = state.book.viewed
     var picker by remember { mutableStateOf(false) }
     var options by remember { mutableStateOf<QueueTrack?>(null) }
@@ -126,13 +123,6 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
     val listState = rememberLazyListState()
     val drag = remember(q?.id, query) { QueueDragState() }
     var pendingOrder by remember(q?.id, query) { mutableStateOf<List<String>?>(null) }
-    val rows by produceState<List<QueueTrack>>(emptyList(), q?.entries, query) {
-        value = emptyList()
-        value = withContext(Dispatchers.Default) {
-            val entries = q?.entries.orEmpty()
-            if (query.isBlank()) entries else entries.filter { LibrarySearch.matches(it.toLibraryTrack(), query) }
-        }
-    }
     LaunchedEffect(rows, state.error) { pendingOrder = null }
     val displayedRows = remember(rows, pendingOrder) {
         pendingOrder?.let { order -> val byId = rows.associateBy { it.id }; order.mapNotNull(byId::get) } ?: rows
@@ -180,7 +170,7 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
                         .background(if (marked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (inactive) .35f else .8f) else MaterialTheme.colorScheme.surface)
                         .combinedClickable(onClick = {
                             if (selected.isNotEmpty()) onToggle(entry.id)
-                            else if (query.isNotBlank()) repository.createSnapshot(q.name + " · search", rows, entry.id)
+                            else if (query.isNotBlank()) repository.createSnapshot("Search - ${query.trim()}", rows, entry.id)
                             else repository.resume(q.id, entry.id)
                         }, onLongClick = { onSelect(entry.id) })
                         .padding(end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -250,12 +240,13 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
 
 @Composable internal fun AddToQueueDialog(tracks: List<LibraryTrack>, repository: PlayerRepository, onDismiss: () -> Unit) {
     val state by repository.state.collectAsState()
+    val name = LocalSongPlayback.current?.queueName ?: "New queue"
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Add to a queue") }, text = {
         LazyColumn(Modifier.heightIn(max = 360.dp)) {
             items(state.book.queues, key = { it.id }) { q -> MenuAction(q.name) { repository.insert(q.id, tracks); onDismiss() } }
         }
     }, confirmButton = { TextButton(onClick = {
-        if (tracks.isNotEmpty()) repository.createAdditional(tracks)
+        if (tracks.isNotEmpty()) repository.createAdditional(tracks, name)
         onDismiss()
     }) { Text("Create new queue") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

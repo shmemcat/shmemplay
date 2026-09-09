@@ -130,6 +130,36 @@ Android Auto software and external commands, but not the car's USB/Bluetooth
 connection timing or voice recognition. Android Auto's development setting must
 remain enabled for this sideloaded build; head unit server is only for DHU tests.
 
+## Spotify Connect priority investigation, September 8, 2026
+
+The user confirmed dedicated Android Auto browsing, controls, and resumption
+worked in the physical car. A remaining symptom was Spotify's card being shown
+when Spotify was open in the background, without Spotify playing on the phone.
+
+Device inspection found Shmemplay's session active, correctly paused, and still
+selected for media-button dispatch. Its service was alive and in the foreground.
+Spotify was reporting `STATE_BUFFERING` and updating song metadata while the
+user played Spotify on another device. Android counts buffering as an active
+playback state. When the user paused the other device, the phone's Spotify
+session changed to paused. This confirms remote playback affects the media
+state visible to clients on the phone; it does not prove Android Auto's exact
+card-selection algorithm.
+
+In Spotify's **Settings > Apps and devices > Spotify Connect control**, disabled
+the enabled option for controlling other-device playback from the phone's lock
+screen. The user resumed Spotify on the other device; the phone session stayed
+paused at the old position. Spotify's process remained running throughout.
+After briefly playing/pausing Shmemplay to establish it as the latest phone
+player, DHU reconnected, automatically resumed it, and retained its dashboard
+card after pausing. No Shmemplay application code or APK changed for this test.
+
+The setting removes lock-screen remote controls for Spotify playing elsewhere.
+It is a targeted workaround for competing remote-session updates, not a
+guarantee that Android Auto will never display Spotify. The initial DHU attempt
+also resumed Shmemplay after the user paused the remote device, so the original
+card takeover was not consistently reproduced. A physical-car follow-up with
+Spotify open remains useful. The temporary DHU server was stopped after testing.
+
 ## References
 
 - [Android Auto media integration](https://developer.android.com/training/cars/media/auto)
@@ -141,3 +171,5 @@ remain enabled for this sideloaded build; head unit server is only for DHU tests
 - [Car launcher and attribution icons](https://developer.android.com/training/cars/media/configure-manifest)
 - [Kustom music troubleshooting](https://docs.kustom.rocks/docs/common_issues/music_player/)
 - [Kustom developer discussion of player detection](https://forum.kustom.rocks/t/media-cover-art-issue/5725)
+- [Spotify Connect](https://support.spotify.com/us/article/spotify-connect/)
+- [Android active playback states](https://developer.android.com/reference/android/media/session/PlaybackState#isActive())

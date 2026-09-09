@@ -74,11 +74,26 @@ class QueuesTest {
         assertNull(q.removed(setOf("D")).currentId)
         assertEquals(12345, book().active!!.removed(setOf("A")).positionMs)
     }
-    @Test fun deletingActiveUsesFollowingPickerQueueWithoutWrapping() {
-        val b = book().create("two", "Two", tracks("E"), "E").activate("one")
-        assertEquals("two", b.delete("one").activeId)
-        assertNull(b.activate("two").delete("two").activeId)
-        assertEquals("one", b.delete("two").activeId)
+    @Test fun deletingActiveUsesPreviousPickerQueueAndItsSavedPosition() {
+        val b = (2..5).fold(book()) { b, n -> b.create("$n", "$n", tracks("song$n"), "song$n") }
+            .edit("2") { it.copy(positionMs = 6789) }.activate("3").view("3")
+        val deleted = b.delete("3")
+        assertEquals("2", deleted.activeId)
+        assertEquals("2", deleted.viewedId)
+        assertEquals("song2", deleted.active!!.currentId)
+        assertEquals(6789, deleted.active!!.positionMs)
+        assertEquals("2", b.activate("one").delete("one").activeId)
+        assertEquals("4", b.activate("5").delete("5").activeId)
+        assertEquals("3", b.delete("2").activeId)
+        assertNull(book().delete("one").activeId)
+    }
+    @Test fun deletingUsesCurrentPickerOrderEvenIfAdjacentQueueIsEmpty() {
+        val b = book().create("two", "Two", tracks("E"), "E").create("three", "Three", tracks("F"), "F")
+            .reordered(listOf("three", "one", "two")).activate("one")
+        assertEquals("three", b.delete("one").activeId)
+        val empty = b.edit("three") { it.removed(setOf("F")) }.delete("one")
+        assertEquals("three", empty.activeId)
+        assertNull(empty.active!!.currentId)
     }
     @Test fun previousThresholdIsStrictlyGreaterThanFiveSeconds() {
         assertEquals("B", book().previous().active!!.currentId)

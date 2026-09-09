@@ -17,13 +17,17 @@ import androidx.compose.ui.unit.dp
 import io.github.shmemcat.shmemplay.domain.Mp3Tags
 import io.github.shmemcat.shmemplay.player.AudioFileEdits
 import io.github.shmemcat.shmemplay.player.PlayerRepository
+import io.github.shmemcat.shmemplay.playlists.LibrarySnapshotStore
 import io.github.shmemcat.shmemplay.tracks.LibraryTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal val LocalLibraryRefresh = staticCompositionLocalOf<() -> Unit> { {} }
+
 @Composable internal fun EditTagsDialog(track:LibraryTrack,onDismiss:()->Unit) {
     val context=LocalContext.current
+    val refreshLibrary = LocalLibraryRefresh.current
     val scope=rememberCoroutineScope()
     var fields by remember(track.stableId){mutableStateOf<Map<String,String>?>(null)}
     var original by remember(track.stableId){mutableStateOf<Map<String,String>>(emptyMap())}
@@ -41,7 +45,7 @@ import kotlinx.coroutines.withContext
     val consent=rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()){result->
         if(result.resultCode==Activity.RESULT_OK) {
             busy=true
-            scope.launch{runCatching{writer.save(track.contentUri,track.displayName,pending)}.onSuccess{onDismiss()}.onFailure{error=it.message};busy=false}
+            scope.launch{runCatching{writer.save(track.contentUri,track.displayName,pending)}.onSuccess{refreshLibrary();onDismiss()}.onFailure{error=it.message};busy=false}
         }
     }
     AlertDialog(onDismissRequest={if(!busy)onDismiss()},title={Text("Edit tags")},text={
@@ -62,9 +66,10 @@ import kotlinx.coroutines.withContext
 
 @Composable internal fun DeleteAudioDialog(track:LibraryTrack,repository:PlayerRepository?,onDismiss:()->Unit) {
     val context=LocalContext.current
+    val refreshLibrary = LocalLibraryRefresh.current
     var error by remember{mutableStateOf<String?>(null)}
     val consent=rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()){result->
-        if(result.resultCode==Activity.RESULT_OK)repository?.unavailable(track.stableId)
+        if(result.resultCode==Activity.RESULT_OK) { repository?.unavailable(track.stableId); refreshLibrary() }
         onDismiss()
     }
     AlertDialog(onDismissRequest=onDismiss,title={Text("Delete audio file permanently?")},text={Column {
@@ -72,20 +77,21 @@ import kotlinx.coroutines.withContext
         Text("Deletes the music file from storage. This is different from removing a queue entry or playlist reference. Android will ask you to confirm.")
         error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
     }},confirmButton={TextButton(onClick={
-        if(Build.VERSION.SDK_INT>=30)runCatching{val request=MediaStore.createDeleteRequest(context.contentResolver,listOf(track.contentUri));consent.launch(IntentSenderRequest.Builder(request.intentSender).build())}.onFailure{error=it.message}
+        if(Build.VERSION.SDK_INT>=30)runCatching{val request=MediaStore.createDeleteRequest(context.contentResolver,listOf(track.contentUri));LibrarySnapshotStore(context).invalidate();consent.launch(IntentSenderRequest.Builder(request.intentSender).build())}.onFailure{error=it.message}
         else error="Per-file deletion requires Android 11 or newer."
     }){Text("Delete file")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})
 }
 
 @Composable internal fun AudioRecoveryControl() {
     val context=LocalContext.current
+    val refreshLibrary = LocalLibraryRefresh.current
     val store=remember{AudioFileEdits(context.applicationContext)}
     val scope=rememberCoroutineScope()
     var pending by remember{mutableStateOf(runCatching{store.pending()}.getOrNull())}
     var message by remember{mutableStateOf<String?>(null)}
     var confirm by remember{mutableStateOf(false)}
     val consent=rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()){result->
-        if(result.resultCode==Activity.RESULT_OK)scope.launch{runCatching{store.restore()}.onSuccess{pending=null;message="Recovery verified."}.onFailure{message=it.message}}
+        if(result.resultCode==Activity.RESULT_OK)scope.launch{runCatching{store.restore()}.onSuccess{refreshLibrary();pending=null;message="Recovery verified."}.onFailure{message=it.message}}
     }
     if(pending!=null)OutlinedButton(onClick={confirm=true}){Text("Restore interrupted tag edit")}
     message?.let{Text(it)}

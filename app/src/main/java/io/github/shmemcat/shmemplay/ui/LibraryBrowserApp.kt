@@ -122,6 +122,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 
 data class LibraryBrowserActions(
@@ -140,19 +142,6 @@ data class LibraryBrowserActions(
     val deletePlaylist: (PlaylistDocument) -> Unit = {},
     val clearMutationMessage: () -> Unit = {},
 )
-
-private enum class BrowserSection(val label: String, val glyph: String) {
-    QUEUES("Queues", "list-music"),
-    NOW_PLAYING("Now Playing", "circle-play"),
-    SONGS("All Songs", "music-2"),
-    ALBUMS("Albums", "▣"),
-    ARTISTS("Artists", "♟"),
-    GENRES("Genres", "◆"),
-    PLAYLISTS("Playlists", "▤"),
-}
-
-private enum class DetailKind { ALBUM, ARTIST, GENRE, PLAYLIST }
-private data class BrowserDetail(val kind: DetailKind, val key: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -217,24 +206,61 @@ fun LibraryBrowserApp(
     val tracks = remember(state.allTracks, state.includedFolderRoots) {
         state.allTracks.filter { it.folderRoot in state.includedFolderRoots }
     }
-    val playlists = remember(state.browserPlaylists,playlistFilter,section,detail) { state.browserPlaylists.filter { detail != null || section != BrowserSection.PLAYLISTS || playlistFilter == "All" || (it.live == (playlistFilter == "Live")) } }
+    val playlists = remember(state.playlistScan, state.livePlaylists) { state.browserPlaylists }
     val tracksById = remember(tracks) { tracks.associateBy(LibraryTrack::stableId) }
-    val queueTracksById = remember(playerState.book.queues.map { it.entries }) { playerState.book.queues.flatMap { it.entries }.associate { it.id to it.toLibraryTrack() } }
+    val queueTracksById = remember(playerState.book.queues.map { it.entries }, selectedIds, editorTrackIds) {
+        val needed = (selectedIds + editorTrackIds).toHashSet()
+        if (needed.isEmpty()) emptyMap() else playerState.book.queues.asSequence().flatMap { it.entries.asSequence() }
+            .filter { it.id in needed }.associate { it.id to it.toLibraryTrack() }
+    }
     val editorTracks = remember(editorTrackIds, tracksById, queueTracksById) { editorTrackIds.mapNotNull { tracksById[it] ?: queueTracksById[it] } }
     val selectedTracks = remember(selectedIds, tracksById, queueTracksById) { selectedIds.mapNotNull { tracksById[it] ?: queueTracksById[it] } }
     val selectedSet = remember(selectedIds) { selectedIds.toHashSet() }
-    val currentTracks by produceState<List<LibraryTrack>>(emptyList(), tracks, playlists, section, detail, query, queueQuery, playerState.book.viewed?.entries) {
+    val libraryIndex by produceState<BrowserLibraryIndex?>(null, tracks) {
+        val browse = withContext(Dispatchers.Default) {
+            val context = coroutineContext
+            BrowserLibraryIndex.browse(tracks) { context.ensureActive() }
+        }
+        value = browse
         value = withContext(Dispatchers.Default) {
-            if (section == BrowserSection.QUEUES) playerState.book.viewed?.entries.orEmpty().map { it.toLibraryTrack() }.filter { LibrarySearch.matches(it, queueQuery) }
-            else currentListTracks(tracks, playlists, section, detail, query)
+            val context = coroutineContext
+            browse.withSearch { context.ensureActive() }
         }
     }
-    val currentUnique = remember(currentTracks) { currentTracks.distinctBy(LibraryTrack::stableId) }
-    val currentTrackIds = remember(currentUnique) { currentUnique.map(LibraryTrack::stableId) }
-    val currentSelected = remember(currentTrackIds, selectedSet) { currentTrackIds.count(selectedSet::contains) }
-    val headerStats by produceState("", tracks, playlists, section, detail, query, currentUnique) {
-        value = withContext(Dispatchers.Default) { browserStats(tracks, playlists, section, detail, query, currentUnique) }
+    val playlistIndex by produceState<BrowserPlaylistIndex?>(null, playlists) {
+        value = withContext(Dispatchers.Default) {
+            val context = coroutineContext
+            BrowserPlaylistIndex(playlists) { context.ensureActive() }
+        }
     }
+    val viewedEntries = if (section == BrowserSection.QUEUES) playerState.book.viewed?.entries.orEmpty() else emptyList()
+    val queueEntries = remember(viewedEntries) { viewedEntries }
+    val queueIndex by produceState<BrowserQueueIndex?>(null, queueEntries) {
+        value = withContext(Dispatchers.Default) {
+            val context = coroutineContext
+            BrowserQueueIndex(queueEntries) { context.ensureActive() }
+        }
+    }
+    val sourceQuery = when (section) { BrowserSection.QUEUES -> queueQuery; BrowserSection.NOW_PLAYING -> ""; else -> query }
+    val request = BrowserSearchRequest(
+        libraryIndex?.takeIf { !playerSection && it.tracks === tracks },
+        playlistIndex?.takeIf { (section == BrowserSection.PLAYLISTS || detail?.kind == DetailKind.PLAYLIST) && it.snapshots === playlists },
+        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.entries === queueEntries }, section, detail, sourceQuery, playlistFilter,
+    )
+    val searchResult by produceState<Pair<BrowserSearchRequest, BrowserProjection>?>(null, request) {
+        value = withContext(Dispatchers.Default) {
+            val context = coroutineContext
+            request to searchBrowser(request) { context.ensureActive() }
+        }
+    }
+    val completedProjection = searchResult?.takeIf { it.first == request }?.second
+    // Cached songs do not depend on either background index stage.
+    val projection = completedProjection ?: projectionWhileIndexing(section, detail, sourceQuery, tracks)
+    val currentTracks = projection.tracks
+    val currentUnique = currentTracks
+    val currentTrackIds = projection.trackIds
+    val currentSelected = remember(currentTrackIds, selectedSet) { currentTrackIds.count(selectedSet::contains) }
+    val headerStats = projection.stats
     val openPlaylist = detail?.takeIf { it.kind == DetailKind.PLAYLIST }?.let { current ->
         playlists.firstOrNull { it.document.uri.toString() == current.key }
     }
@@ -269,17 +295,18 @@ fun LibraryBrowserApp(
         }
     }
 
-    val songPlayback = playerRepository?.let { repository -> SongPlaybackActions(repository, navigate = { kind, key ->
+    val searchQueueName = sourceQuery.trim().takeIf(String::isNotEmpty)?.let { "Search - $it" }
+    val songPlayback = playerRepository?.let { repository -> SongPlaybackActions(repository, queueName = searchQueueName ?: "New queue", navigate = { kind, key ->
         sectionName = when(kind) { "Album" -> BrowserSection.ALBUMS.name; "Artist" -> BrowserSection.ARTISTS.name; else -> BrowserSection.GENRES.name }
         detailKind = when(kind) { "Album" -> DetailKind.ALBUM.name; "Artist" -> DetailKind.ARTIST.name; else -> DetailKind.GENRE.name }
         detailKey = key
     }) { track ->
-        repository.create(detailTitle(detail, state) ?: section.label, currentTracks, track)
+        repository.create(searchQueueName ?: detailTitle(detail, state) ?: section.label, currentTracks, track)
         sectionName = BrowserSection.NOW_PLAYING.name
         detailKind = null
         detailKey = null
     } }
-    CompositionLocalProvider(LocalSongPlayback provides songPlayback) {
+    CompositionLocalProvider(LocalSongPlayback provides songPlayback, LocalLibraryRefresh provides actions.refreshLibrary) {
     Scaffold(
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).imePadding(),
         topBar = {
@@ -302,10 +329,10 @@ fun LibraryBrowserApp(
                 },
                 showRules = section == BrowserSection.PLAYLISTS && detail == null,
                 onNewPlaylist = { showNewPlaylist = true },
-                canShufflePlaylist = playerRepository != null && openPlaylist?.sourceError == null && openPlaylist?.entries?.any { it.track != null } == true,
+                canShufflePlaylist = playerRepository != null && openPlaylist?.sourceError == null && currentTracks.isNotEmpty() && openPlaylist != null,
                 onShufflePlaylist = {
                     openPlaylist?.let { snapshot ->
-                        playerRepository?.shuffleAndPlay(if (snapshot.live) snapshot.document.displayName else snapshot.document.displayName.substringBeforeLast('.'), snapshot.resolvedTracks)
+                        playerRepository?.shuffleAndPlay(searchQueueName ?: if (snapshot.live) snapshot.document.displayName else snapshot.document.displayName.substringBeforeLast('.'), currentTracks)
                         sectionName = BrowserSection.NOW_PLAYING.name
                         detailKind = null
                         detailKey = null
@@ -401,7 +428,7 @@ fun LibraryBrowserApp(
                     if (!playerState.ready || !playerState.connected) Loading(playerState.error ?: "Connecting player…")
                     else if (section == BrowserSection.NOW_PLAYING) NowPlayingScreen(playerState, playerRepository) { editorTrackIds = listOf(it.stableId) }
                     else QueuesScreen(playerState, playerRepository, { editorTrackIds = listOf(it.stableId) }, actions.createPlaylist,
-                        queueQuery, selectedSet, { id -> selectedIds = if (id in selectedSet) selectedIds - id else selectedIds + id },
+                        queueQuery, projection.queueRows, selectedSet, { id -> selectedIds = if (id in selectedSet) selectedIds - id else selectedIds + id },
                         { id -> if (id !in selectedSet) selectedIds = selectedIds + id })
                 }
                 state.permissionRequired -> PermissionRequired(actions.requestAudioPermission)
@@ -413,6 +440,7 @@ fun LibraryBrowserApp(
                     onPlaylistFilter = { playlistFilter = it },
                     tracks = tracks,
                     currentTracks = currentUnique,
+                    projection = projection,
                     rootScrollState = rootScrollState(section),
                     detailScrollState = detailScrollState,
                     section = section,
@@ -437,13 +465,12 @@ fun LibraryBrowserApp(
                     onPlaylist = { track -> editorTrackIds = listOf(track.stableId) },
                 )
             }
-            if (state.busy && state.allTracks.isNotEmpty() && !membershipSubmitted) {
+            if ((state.loadingLibrary || state.mutation is BrowserMutationState.Working) && state.allTracks.isNotEmpty() && !membershipSubmitted) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
         }
     }
 
-    }
     LaunchedEffect(state.mutation, membershipSubmitted) {
         if (membershipSubmitted) when (state.mutation) {
             is BrowserMutationState.Result -> {
@@ -507,6 +534,7 @@ fun LibraryBrowserApp(
         showNewPlaylist = false
     }
     MutationDialogs(state, actions, suppressSuccess = membershipSubmitted)
+    }
 }
 
 @Composable
@@ -610,6 +638,7 @@ private fun BrowserContent(
     onPlaylistFilter: (String) -> Unit,
     tracks: List<LibraryTrack>,
     currentTracks: List<LibraryTrack>,
+    projection: BrowserProjection,
     rootScrollState: LazyListState,
     detailScrollState: LazyListState,
     section: BrowserSection,
@@ -622,12 +651,16 @@ private fun BrowserContent(
     onToggle: (LibraryTrack) -> Unit,
     onPlaylist: (LibraryTrack) -> Unit,
 ) {
+    if (projection.loading) {
+        Loading(if (query.isBlank()) "Preparing library…" else "Preparing search…")
+        return
+    }
     if (detail != null) {
         if (detail.kind == DetailKind.PLAYLIST) {
             val snapshot = state.browserPlaylists.firstOrNull { it.document.uri.toString() == detail.key }
             if (snapshot == null) EmptyMessage("Playlist no longer exists.") else PlaylistEntries(
                 snapshot = snapshot,
-                query = query,
+                entries = projection.entries,
                 listState = detailScrollState,
                 selected = selected,
                 selectionMode = selectionMode,
@@ -659,10 +692,10 @@ private fun BrowserContent(
             onToggle = onToggle,
             onPlaylist = onPlaylist,
         )
-        BrowserSection.ALBUMS -> GroupList(tracks, DetailKind.ALBUM, query, rootScrollState, onOpenDetail)
-        BrowserSection.ARTISTS -> GroupList(tracks, DetailKind.ARTIST, query, rootScrollState, onOpenDetail)
-        BrowserSection.GENRES -> GroupList(tracks, DetailKind.GENRE, query, rootScrollState, onOpenDetail)
-        BrowserSection.PLAYLISTS -> PlaylistList(state, query, rootScrollState, onOpenDetail, playlistFilter, onPlaylistFilter)
+        BrowserSection.ALBUMS -> GroupList(projection.groups, DetailKind.ALBUM, rootScrollState, onOpenDetail)
+        BrowserSection.ARTISTS -> GroupList(projection.groups, DetailKind.ARTIST, rootScrollState, onOpenDetail)
+        BrowserSection.GENRES -> GroupList(projection.groups, DetailKind.GENRE, rootScrollState, onOpenDetail)
+        BrowserSection.PLAYLISTS -> PlaylistList(state, projection.playlists, rootScrollState, onOpenDetail, playlistFilter, onPlaylistFilter)
     }
 }
 
@@ -702,9 +735,10 @@ internal fun FastScrollableLazyColumn(
     precomputedTargets: List<FastScrollTarget>? = null,
     content: LazyListScope.() -> Unit,
 ) {
-    val targets = remember(bucketLabels, precomputedTargets) {
-        precomputedTargets ?: bucketLabels?.let(FastScrollIndex::targets).orEmpty()
+    val computedTargets by produceState<Pair<List<String>?, List<FastScrollTarget>>?>(null, bucketLabels, precomputedTargets) {
+        value = bucketLabels to (precomputedTargets ?: withContext(Dispatchers.Default) { bucketLabels?.let(FastScrollIndex::targets).orEmpty() })
     }
+    val targets = precomputedTargets ?: computedTargets?.takeIf { it.first == bucketLabels }?.second.orEmpty()
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -876,7 +910,7 @@ private fun FastScrollbar(
 @Composable
 private fun PlaylistEntries(
     snapshot: PlaylistSnapshot,
-    query: String,
+    entries: List<io.github.shmemcat.shmemplay.playlists.PlaylistEntry>,
     listState: LazyListState,
     selected: Set<String>,
     selectionMode: Boolean,
@@ -885,7 +919,6 @@ private fun PlaylistEntries(
     onPlaylist: (LibraryTrack) -> Unit,
 ) {
     if (snapshot.sourceError != null) { EmptyMessage(snapshot.sourceError); return }
-    val entries = remember(snapshot,query) { displayedPlaylistEntries(snapshot,query) }
     if (entries.isEmpty()) {
         EmptyMessage("No playlist entries match this search.")
         return
@@ -1010,15 +1043,11 @@ private fun CategoryArtwork(kind: DetailKind) {
 
 @Composable
 private fun GroupList(
-    tracks: List<LibraryTrack>,
+    groups: List<Pair<String, List<LibraryTrack>>>,
     kind: DetailKind,
-    query: String,
     listState: LazyListState,
     onOpen: (BrowserDetail) -> Unit,
 ) {
-    val groups by produceState<List<Pair<String, List<LibraryTrack>>>>(emptyList(), tracks, kind, query) {
-        value = withContext(Dispatchers.Default) { visibleGroups(tracks, kind, query) }
-    }
     var albumGrid by rememberSaveable { mutableStateOf(true) }
     if (groups.isEmpty()) {
         EmptyMessage("No groups match this search.")
@@ -1081,18 +1110,12 @@ private fun GroupList(
 @Composable
 private fun PlaylistList(
     state: LibraryBrowserState,
-    query: String,
+    playlists: List<PlaylistSearchRow>,
     listState: LazyListState,
     onOpen: (BrowserDetail) -> Unit,
     filter: String,
     onFilter: (String) -> Unit,
 ) {
-    val playlists = remember(state.browserPlaylists, query, filter) {
-        state.browserPlaylists.filter { filter == "All" || it.live == (filter == "Live") }.filter { snapshot ->
-            query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
-                snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
-        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.document.displayName })
-    }
     if (state.grant is PlaylistTreeGrantState.NotConfigured) {
         EmptyMessage("Choose your playlist folder in Settings.")
         return
@@ -1108,12 +1131,9 @@ private fun PlaylistList(
         bucketLabels = null,
         liveDrag = true,
     ) {
-        items(playlists, key = { it.document.uri.toString() }) { snapshot ->
-            val songs = if (LibrarySearch.matches(snapshot.document.displayName, query)) {
-                snapshot.resolvedTracks
-            } else {
-                snapshot.resolvedTracks.filter { LibrarySearch.matches(it, query) }
-            }
+        items(playlists, key = { it.snapshot.document.uri.toString() }) { row ->
+            val snapshot = row.snapshot
+            val songs = row.songs
             Row(
                 Modifier.fillMaxWidth().height(58.dp)
                     .combinedClickable(
@@ -1129,7 +1149,7 @@ private fun PlaylistList(
                     Text(snapshot.document.displayName.substringBeforeLast('.') + if (snapshot.live) " · Live" else "", fontWeight = FontWeight.SemiBold)
                     Text(
                         "${songs.size} song${if (songs.size == 1) "" else "s"}" +
-                            if (snapshot.sourceError != null) " · source unavailable" else if (snapshot.entries.any { it.track == null }) " · missing files" else "",
+                            if (snapshot.sourceError != null) " · source unavailable" else if (row.missingFiles) " · missing files" else "",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -1278,9 +1298,10 @@ private fun SettingsSheet(
                     }
                 }
                 item {
-                    OutlinedButton(onClick = actions.refreshLibrary, modifier = Modifier.fillMaxWidth()) {
-                        Text("Refresh music library")
+                    OutlinedButton(onClick = actions.refreshLibrary, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("Rescan library & playlists")
                     }
+                    Text("Songs are saved on this device for faster startup. Rescan after syncing music with your PC. Playlists are read when the app opens.", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(18.dp))
                     Text("Playlist folder", style = MaterialTheme.typography.titleMedium)
                     Text(
@@ -1646,98 +1667,6 @@ private fun MutationDialogs(state: LibraryBrowserState, actions: LibraryBrowserA
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { Text(message) }
 }
 
-private fun currentListTracks(
-    tracks: List<LibraryTrack>,
-    playlists: List<PlaylistSnapshot>,
-    section: BrowserSection,
-    detail: BrowserDetail?,
-    query: String,
-): List<LibraryTrack> {
-    if (detail != null) {
-        return when (detail.kind) {
-            DetailKind.PLAYLIST -> playlists
-                .firstOrNull { it.document.uri.toString() == detail.key }
-                ?.let { snapshot ->
-                    displayedPlaylistEntries(snapshot,query).mapNotNull { it.track }
-                }.orEmpty()
-            else -> tracks.filter { groupValue(it, detail.kind) == detail.key }
-                .let { tracks ->
-                    if (LibrarySearch.matches(detail.key, query)) tracks
-                    else tracks.filter { LibrarySearch.matches(it, query) }
-                }
-        }
-    }
-    return when (section) {
-        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> emptyList()
-        BrowserSection.SONGS -> tracks.filter { LibrarySearch.matches(it, query) }
-        BrowserSection.ALBUMS -> visibleGroups(tracks, DetailKind.ALBUM, query).flatMap { it.second }
-        BrowserSection.ARTISTS -> visibleGroups(tracks, DetailKind.ARTIST, query).flatMap { it.second }
-        BrowserSection.GENRES -> visibleGroups(tracks, DetailKind.GENRE, query).flatMap { it.second }
-        BrowserSection.PLAYLISTS -> playlists.filter { snapshot ->
-            query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
-                snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
-        }.flatMap { snapshot ->
-            if (LibrarySearch.matches(snapshot.document.displayName, query)) snapshot.resolvedTracks
-            else snapshot.resolvedTracks.filter { LibrarySearch.matches(it, query) }
-        }
-    }
-}
-
-private fun visibleGroups(
-    tracks: List<LibraryTrack>,
-    kind: DetailKind,
-    query: String,
-): List<Pair<String, List<LibraryTrack>>> = tracks.groupBy { groupValue(it, kind) }
-    .mapValues { (name, songs) ->
-        if (query.isBlank() || LibrarySearch.matches(name, query)) songs
-        else songs.filter { LibrarySearch.matches(it, query) }
-    }
-    .filterValues(List<LibraryTrack>::isNotEmpty)
-    .toList()
-    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.first })
-
-private fun browserStats(
-    tracks: List<LibraryTrack>,
-    playlists: List<PlaylistSnapshot>,
-    section: BrowserSection,
-    detail: BrowserDetail?,
-    query: String,
-    currentTracks: List<LibraryTrack>,
-): String {
-    if (detail != null) return songStats(currentTracks)
-    return when (section) {
-        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> ""
-        BrowserSection.SONGS -> songStats(currentTracks)
-        BrowserSection.ALBUMS -> countLabel(visibleGroups(tracks, DetailKind.ALBUM, query).size, "album")
-        BrowserSection.ARTISTS -> countLabel(visibleGroups(tracks, DetailKind.ARTIST, query).size, "artist")
-        BrowserSection.GENRES -> countLabel(visibleGroups(tracks, DetailKind.GENRE, query).size, "genre")
-        BrowserSection.PLAYLISTS -> countLabel(
-            playlists.count { snapshot ->
-                query.isBlank() || LibrarySearch.matches(snapshot.document.displayName, query) ||
-                    snapshot.resolvedTracks.any { LibrarySearch.matches(it, query) }
-            },
-            "playlist",
-        )
-    }
-}
-
-private fun songStats(tracks: List<LibraryTrack>): String =
-    "${countLabel(tracks.size, "song")} · ${formatHours(tracks.sumOf(LibraryTrack::durationMs))}"
-
-private fun countLabel(count: Int, singular: String): String =
-    "$count $singular${if (count == 1) "" else "s"}"
-
-private fun formatHours(durationMs: Long): String {
-    val totalMinutes = durationMs.coerceAtLeast(0L) / 60_000
-    return "${totalMinutes / 60}h ${totalMinutes % 60}m"
-}
-
-private fun groupValue(track: LibraryTrack, kind: DetailKind): String = when (kind) {
-    DetailKind.ALBUM -> track.album
-    DetailKind.ARTIST -> track.artist
-    DetailKind.GENRE -> track.genre
-    DetailKind.PLAYLIST -> error("Playlist is not a track metadata group")
-}
 
 private fun detailTitle(detail: BrowserDetail?, state: LibraryBrowserState): String? = when (detail?.kind) {
     DetailKind.PLAYLIST -> state.browserPlaylists
@@ -1799,11 +1728,4 @@ private fun sectionIcon(section: BrowserSection): Int = when(section) {
     BrowserSection.ARTISTS -> R.drawable.ic_user_round
     BrowserSection.GENRES -> R.drawable.ic_tags
     BrowserSection.PLAYLISTS -> R.drawable.ic_list_video
-}
-
-private fun displayedPlaylistEntries(snapshot: PlaylistSnapshot, query: String): List<io.github.shmemcat.shmemplay.playlists.PlaylistEntry> {
-    if(snapshot.sourceError != null) return emptyList()
-    val all = LibrarySearch.matches(snapshot.document.displayName,query)
-    return snapshot.entries.filter { entry -> query.isBlank() || all || entry.track?.let { LibrarySearch.matches(it,query) } == true || LibrarySearch.matches(entry.normalizedPath,query) }
-        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.track?.title ?: it.normalizedPath.substringAfterLast('/') })
 }

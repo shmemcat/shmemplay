@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.AtomicFile
 import io.github.shmemcat.shmemplay.domain.Mp3Tags
+import io.github.shmemcat.shmemplay.playlists.LibrarySnapshotStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -57,6 +58,7 @@ class AudioFileEdits(private val context: Context) {
         journal.delete();p.backup.delete();File(directory,"updated.mp3").delete()
     } }
     private fun overwrite(uri:Uri,source:File) {
+        LibrarySnapshotStore(context).invalidate()
         context.contentResolver.openFileDescriptor(uri,"rwt")?.use{pfd->
             java.io.FileOutputStream(pfd.fileDescriptor).use{output->source.inputStream().use{it.copyTo(output)};output.flush();output.fd.sync()}
         } ?: error("Audio write access unavailable")

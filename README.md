@@ -36,7 +36,10 @@ does not request network access.
   an M3U snapshot.
 - **Large-library browsing:** browse songs, albums, artists, genres, and
   playlists with artwork, normalized search, folder filters, compact lists,
-  fast scrolling, and bulk selection.
+  fast scrolling, and bulk selection. The song index is saved locally for faster
+  startup; use **Rescan library & playlists** in Settings after syncing music
+  from your PC. M3Us are still read on app open and return, so playlist membership
+  is loaded ahead of editing.
 - **Playlist editing:** add or remove one or many songs across selected
   `.m3u`/`.m3u8` files; create, rename, and delete file playlists; or edit
   membership without leaving the browser.
