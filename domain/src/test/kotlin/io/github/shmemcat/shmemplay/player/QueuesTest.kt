@@ -68,6 +68,13 @@ class QueuesTest {
         assertEquals(SongEnd.REPEAT, three.active!!.policy.songEnd)
         assertEquals(SongEnd.PLAY_NEXT, three.queues.first { it.id == "one" }.policy.songEnd)
     }
+    @Test fun explicitlyOrderedCreationOverridesInheritedShuffle() {
+        val shuffled = book().edit("one") { it.copy(policy = it.policy.copy(shuffle = true)) }
+        val ordered = shuffled.create("two", "Two", tracks("E", "F", "G"), "E", shuffle = false).active!!
+        assertFalse(ordered.policy.shuffle)
+        assertEquals(listOf("E", "F", "G"), ordered.entries.map { it.id })
+        assertEquals("E", ordered.currentId)
+    }
     @Test fun removingCurrentAdvancesAndFinalRemovalStopsExplicitly() {
         val q = book().active!!.removed(setOf("B", "C"))
         assertEquals("D", q.currentId); assertEquals(0, q.positionMs)

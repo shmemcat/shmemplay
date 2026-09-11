@@ -169,6 +169,13 @@ class PlayerRepository internal constructor(context: Context) {
         }
     }
     fun create(name: String, tracks: List<LibraryTrack>, start: LibraryTrack) = createSnapshot(name, tracks.map { it.toQueueTrack() }, start.stableId)
+    fun playAllInOrder(name: String, tracks: List<LibraryTrack>) {
+        if (tracks.isEmpty()) return
+        val entries = tracks.map(LibraryTrack::toQueueTrack)
+        change(true, true) {
+            it.create(UUID.randomUUID().toString(), name, entries, entries.first().id, shuffle = false)
+        }
+    }
     fun shuffleAndPlay(name: String, tracks: List<LibraryTrack>) {
         if (tracks.isEmpty()) return
         change(true, true) { it.createShuffled(UUID.randomUUID().toString(), name, tracks.map(LibraryTrack::toQueueTrack)) }

@@ -264,6 +264,19 @@ fun LibraryBrowserApp(
     val openPlaylist = detail?.takeIf { it.kind == DetailKind.PLAYLIST }?.let { current ->
         playlists.firstOrNull { it.document.uri.toString() == current.key }
     }
+    val searchQueueName = sourceQuery.trim().takeIf(String::isNotEmpty)?.let { "Search - $it" }
+    val showSearchPlayback = showsSearchPlaybackActions(section, detail, sourceQuery)
+    val canPlaySearchResults = playerRepository != null && !projection.loading && currentTracks.isNotEmpty()
+    val canPlayPlaylist = playerRepository != null && openPlaylist?.sourceError == null && currentTracks.isNotEmpty()
+    val playlistQueueName = openPlaylist?.let { snapshot ->
+        searchQueueName ?: if (snapshot.live) snapshot.document.displayName else snapshot.document.displayName.substringBeforeLast('.')
+    }
+
+    fun openNowPlaying() {
+        sectionName = BrowserSection.NOW_PLAYING.name
+        detailKind = null
+        detailKey = null
+    }
 
     LaunchedEffect(tracks) {
         val available = tracks.mapTo(hashSetOf(), LibraryTrack::stableId)
@@ -295,7 +308,6 @@ fun LibraryBrowserApp(
         }
     }
 
-    val searchQueueName = sourceQuery.trim().takeIf(String::isNotEmpty)?.let { "Search - $it" }
     val songPlayback = playerRepository?.let { repository -> SongPlaybackActions(repository, queueName = searchQueueName ?: "New queue", navigate = { kind, key ->
         sectionName = when(kind) { "Album" -> BrowserSection.ALBUMS.name; "Artist" -> BrowserSection.ARTISTS.name; else -> BrowserSection.GENRES.name }
         detailKind = when(kind) { "Album" -> DetailKind.ALBUM.name; "Artist" -> DetailKind.ARTIST.name; else -> DetailKind.GENRE.name }
@@ -310,43 +322,59 @@ fun LibraryBrowserApp(
     Scaffold(
         modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).imePadding(),
         topBar = {
-            BrowserTopBar(
-                title = if (playerSection) section.label else detailTitle(detail, state) ?: section.label,
-                stats = if (playerSection) "" else headerStats,
-                canGoBack = detail != null,
-                onBack = {
-                    detailKind = null
-                    detailKey = null
-                },
-                onSettings = { showSettings = true },
-                playlist = openPlaylist,
-                playlistMenuExpanded = playlistMenuExpanded,
-                onPlaylistMenuExpanded = { playlistMenuExpanded = it },
-                onRules = {
-                    val id = openPlaylist?.takeIf { it.live }?.document?.uri?.schemeSpecificPart
-                    if (editingRecipeId != id) builderDraft = null
-                    editingRecipeId = id; actions.clearMutationMessage(); showRules = true
-                },
-                showRules = section == BrowserSection.PLAYLISTS && detail == null,
-                onNewPlaylist = { showNewPlaylist = true },
-                canShufflePlaylist = playerRepository != null && openPlaylist?.sourceError == null && currentTracks.isNotEmpty() && openPlaylist != null,
-                onShufflePlaylist = {
-                    openPlaylist?.let { snapshot ->
-                        playerRepository?.shuffleAndPlay(searchQueueName ?: if (snapshot.live) snapshot.document.displayName else snapshot.document.displayName.substringBeforeLast('.'), currentTracks)
-                        sectionName = BrowserSection.NOW_PLAYING.name
+            Column {
+                BrowserTopBar(
+                    title = if (playerSection) section.label else detailTitle(detail, state) ?: section.label,
+                    stats = if (playerSection) "" else headerStats,
+                    canGoBack = detail != null,
+                    onBack = {
                         detailKind = null
                         detailKey = null
-                    }
-                },
-                onRename = { openPlaylist?.let { renameDocumentUri = it.document.uri.toString() } },
-                onDelete = { openPlaylist?.let { deleteDocumentUri = it.document.uri.toString() } },
-                onSelectAll = {
-                    selectedIds = LibrarySelection.selectAll(
-                        selectedIds,
-                        currentTrackIds,
-                    )
-                },
-            )
+                    },
+                    onSettings = { showSettings = true },
+                    showSearchPlayback = showSearchPlayback,
+                    canPlaySearchResults = canPlaySearchResults,
+                    onPlaySearchResults = {
+                        playerRepository?.playAllInOrder(searchQueueName ?: section.label, currentTracks)
+                        openNowPlaying()
+                    },
+                    onShuffleSearchResults = {
+                        playerRepository?.shuffleAndPlay(searchQueueName ?: section.label, currentTracks)
+                        openNowPlaying()
+                    },
+                    onRules = {
+                        val id = openPlaylist?.takeIf { it.live }?.document?.uri?.schemeSpecificPart
+                        if (editingRecipeId != id) builderDraft = null
+                        editingRecipeId = id; actions.clearMutationMessage(); showRules = true
+                    },
+                    showRules = section == BrowserSection.PLAYLISTS && detail == null,
+                    onNewPlaylist = { showNewPlaylist = true },
+                )
+                if (openPlaylist != null) PlaylistActionBar(
+                    playlist = openPlaylist,
+                    menuExpanded = playlistMenuExpanded,
+                    onMenuExpanded = { playlistMenuExpanded = it },
+                    canPlay = canPlayPlaylist,
+                    onPlay = {
+                        playlistQueueName?.let { playerRepository?.playAllInOrder(it, currentTracks) }
+                        openNowPlaying()
+                    },
+                    onShuffle = {
+                        playlistQueueName?.let { playerRepository?.shuffleAndPlay(it, currentTracks) }
+                        openNowPlaying()
+                    },
+                    onRules = {
+                        val id = openPlaylist.takeIf { it.live }?.document?.uri?.schemeSpecificPart
+                        if (editingRecipeId != id) builderDraft = null
+                        editingRecipeId = id; actions.clearMutationMessage(); showRules = true
+                    },
+                    onRename = { renameDocumentUri = openPlaylist.document.uri.toString() },
+                    onDelete = { deleteDocumentUri = openPlaylist.document.uri.toString() },
+                    onSelectAll = {
+                        selectedIds = LibrarySelection.selectAll(selectedIds, currentTrackIds)
+                    },
+                )
+            }
         },
         bottomBar = {
             Column {
@@ -544,17 +572,13 @@ private fun BrowserTopBar(
     canGoBack: Boolean,
     onBack: () -> Unit,
     onSettings: () -> Unit,
-    playlist: PlaylistSnapshot?,
-    playlistMenuExpanded: Boolean,
-    onPlaylistMenuExpanded: (Boolean) -> Unit,
+    showSearchPlayback: Boolean,
+    canPlaySearchResults: Boolean,
+    onPlaySearchResults: () -> Unit,
+    onShuffleSearchResults: () -> Unit,
     showRules: Boolean,
     onRules: () -> Unit,
     onNewPlaylist: () -> Unit,
-    canShufflePlaylist: Boolean,
-    onShufflePlaylist: () -> Unit,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
-    onSelectAll: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Row(
@@ -595,38 +619,58 @@ private fun BrowserTopBar(
                         }
                     }
                 }
-                if (playlist != null) {
-                    Box {
-                        TextButton(onClick = { onPlaylistMenuExpanded(true) }) { PlayerIcon(R.drawable.ic_ellipsis, "Playlist options") }
-                        DropdownMenu(
-                            expanded = playlistMenuExpanded,
-                            onDismissRequest = { onPlaylistMenuExpanded(false) },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Shuffle & Play") },
-                                leadingIcon = { PlayerIcon(R.drawable.ic_shuffle, null) },
-                                enabled = canShufflePlaylist,
-                                onClick = { onPlaylistMenuExpanded(false); onShufflePlaylist() },
-                            )
-                            HorizontalDivider()
-                            if (playlist.live) DropdownMenuItem(text = { Text("Edit rules / repair sources") }, onClick = { onPlaylistMenuExpanded(false); onRules() })
-                            DropdownMenuItem(text = { Text("Rename playlist") }, onClick = {
-                                onPlaylistMenuExpanded(false); onRename()
-                            })
-                            DropdownMenuItem(text = { Text("Delete playlist") }, onClick = {
-                                onPlaylistMenuExpanded(false); onDelete()
-                            })
-                            DropdownMenuItem(text = { Text("Select all") }, onClick = {
-                                onPlaylistMenuExpanded(false); onSelectAll()
-                            })
-                        }
+                if (showSearchPlayback) {
+                    PlayerButton(R.drawable.ic_play, "Play all search results", canPlaySearchResults, onPlaySearchResults)
+                    PlayerButton(R.drawable.ic_shuffle, "Shuffle all search results", canPlaySearchResults, onShuffleSearchResults)
+                }
+                PlayerButton(R.drawable.ic_settings, "Settings", action = onSettings)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistActionBar(
+    playlist: PlaylistSnapshot,
+    menuExpanded: Boolean,
+    onMenuExpanded: (Boolean) -> Unit,
+    canPlay: Boolean,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    onRules: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onSelectAll: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxWidth().semantics { testTag = "playlist-action-bar" }) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(52.dp).padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                PlayerButton(R.drawable.ic_play, "Play playlist in order", canPlay, onPlay)
+                PlayerButton(R.drawable.ic_shuffle, "Shuffle playlist", canPlay, onShuffle)
+                Box {
+                    PlayerButton(R.drawable.ic_ellipsis, "Playlist options") { onMenuExpanded(true) }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { onMenuExpanded(false) },
+                    ) {
+                        if (playlist.live) DropdownMenuItem(text = { Text("Edit rules / repair sources") }, onClick = { onMenuExpanded(false); onRules() })
+                        DropdownMenuItem(text = { Text("Rename playlist") }, onClick = {
+                            onMenuExpanded(false); onRename()
+                        })
+                        DropdownMenuItem(text = { Text("Delete playlist") }, onClick = {
+                            onMenuExpanded(false); onDelete()
+                        })
+                        DropdownMenuItem(text = { Text("Select all") }, onClick = {
+                            onMenuExpanded(false); onSelectAll()
+                        })
                     }
                 }
-                TextButton(
-                    onClick = onSettings,
-                    modifier = Modifier.semantics { contentDescription = "Settings" },
-                ) { PlayerIcon(R.drawable.ic_settings, "Settings") }
             }
+            HorizontalDivider()
         }
     }
 }

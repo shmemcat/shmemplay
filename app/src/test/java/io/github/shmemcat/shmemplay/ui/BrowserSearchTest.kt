@@ -27,6 +27,21 @@ class BrowserSearchTest {
     private fun request(section: BrowserSection, query: String, detail: BrowserDetail? = null, playlists: List<PlaylistSnapshot> = emptyList()) =
         BrowserSearchRequest(BrowserLibraryIndex.indexed(tracks), BrowserPlaylistIndex(playlists), null, section, detail, query, "All")
 
+    @Test fun searchPlaybackActionsOnlyAppearForMainCategorySearches() {
+        val main = listOf(
+            BrowserSection.SONGS,
+            BrowserSection.ALBUMS,
+            BrowserSection.ARTISTS,
+            BrowserSection.GENRES,
+            BrowserSection.PLAYLISTS,
+        )
+        main.forEach { assertTrue(it.name, showsSearchPlaybackActions(it, null, "moon")) }
+        assertFalse(showsSearchPlaybackActions(BrowserSection.QUEUES, null, "moon"))
+        assertFalse(showsSearchPlaybackActions(BrowserSection.NOW_PLAYING, null, "moon"))
+        assertFalse(showsSearchPlaybackActions(BrowserSection.SONGS, null, "   "))
+        assertFalse(showsSearchPlaybackActions(BrowserSection.SONGS, BrowserDetail(DetailKind.ALBUM, "Album"), "moon"))
+    }
+
     @Test fun cachedSongRowsAreNeverReplacedByAFalseEmptyStateWhileIndexesBuild() {
         val songs = projectionWhileIndexing(BrowserSection.SONGS, null, "", tracks)
         assertFalse(songs.loading)

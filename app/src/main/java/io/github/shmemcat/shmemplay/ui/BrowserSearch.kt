@@ -15,6 +15,16 @@ internal enum class BrowserSection(val label: String, val glyph: String) {
 internal enum class DetailKind { ALBUM, ARTIST, GENRE, PLAYLIST }
 internal data class BrowserDetail(val kind: DetailKind, val key: String)
 
+internal fun showsSearchPlaybackActions(section: BrowserSection, detail: BrowserDetail?, query: String): Boolean =
+    detail == null && query.isNotBlank() && when (section) {
+        BrowserSection.SONGS,
+        BrowserSection.ALBUMS,
+        BrowserSection.ARTISTS,
+        BrowserSection.GENRES,
+        BrowserSection.PLAYLISTS -> true
+        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> false
+    }
+
 /** Metadata groups publish first; the substring accelerator is attached in a second background stage. */
 internal class BrowserLibraryIndex private constructor(
     val tracks: List<LibraryTrack>,
