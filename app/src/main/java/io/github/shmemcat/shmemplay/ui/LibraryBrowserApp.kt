@@ -86,6 +86,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -266,7 +267,16 @@ fun LibraryBrowserApp(
     }
     val searchQueueName = sourceQuery.trim().takeIf(String::isNotEmpty)?.let { "Search - $it" }
     val showSearchPlayback = showsSearchPlaybackActions(section, detail, sourceQuery)
-    val canPlaySearchResults = playerRepository != null && !projection.loading && currentTracks.isNotEmpty()
+    val hasPlayableSearchResults = remember(section, projection.loading, projection.queueRows, currentTracks) {
+        !projection.loading && if (section == BrowserSection.QUEUES) projection.queueRows.any { !it.unavailable }
+        else currentTracks.isNotEmpty()
+    }
+    val canPlaySearchResults = playerRepository != null && hasPlayableSearchResults
+    val viewedQueue = playerState.book.viewed
+    val remainingSearchRows = remember(section, projection.loading, projection.queueRows, viewedQueue?.entries, viewedQueue?.currentId) {
+        if (section == BrowserSection.QUEUES && !projection.loading) remainingQueueMatches(viewedQueue, projection.queueRows)
+        else emptyList()
+    }
     val canPlayPlaylist = playerRepository != null && openPlaylist?.sourceError == null && currentTracks.isNotEmpty()
     val playlistQueueName = openPlaylist?.let { snapshot ->
         searchQueueName ?: if (snapshot.live) snapshot.document.displayName else snapshot.document.displayName.substringBeforeLast('.')
@@ -333,13 +343,31 @@ fun LibraryBrowserApp(
                     },
                     onSettings = { showSettings = true },
                     showSearchPlayback = showSearchPlayback,
+                    showRemainingOptions = section == BrowserSection.QUEUES,
                     canPlaySearchResults = canPlaySearchResults,
+                    canPlayRemaining = playerRepository != null && remainingSearchRows.isNotEmpty(),
                     onPlaySearchResults = {
-                        playerRepository?.playAllInOrder(searchQueueName ?: section.label, currentTracks)
+                        if (section == BrowserSection.QUEUES) {
+                            playerRepository?.playQueueMatchesInOrder(searchQueueName ?: section.label, projection.queueRows)
+                        } else {
+                            playerRepository?.playAllInOrder(searchQueueName ?: section.label, currentTracks)
+                        }
                         openNowPlaying()
                     },
                     onShuffleSearchResults = {
-                        playerRepository?.shuffleAndPlay(searchQueueName ?: section.label, currentTracks)
+                        if (section == BrowserSection.QUEUES) {
+                            playerRepository?.shuffleQueueMatches(searchQueueName ?: section.label, projection.queueRows)
+                        } else {
+                            playerRepository?.shuffleAndPlay(searchQueueName ?: section.label, currentTracks)
+                        }
+                        openNowPlaying()
+                    },
+                    onPlayRemaining = {
+                        playerRepository?.playQueueMatchesInOrder(searchQueueName ?: section.label, remainingSearchRows)
+                        openNowPlaying()
+                    },
+                    onShuffleRemaining = {
+                        playerRepository?.shuffleQueueMatches(searchQueueName ?: section.label, remainingSearchRows)
                         openNowPlaying()
                     },
                     onRules = {
@@ -456,7 +484,7 @@ fun LibraryBrowserApp(
                     if (!playerState.ready || !playerState.connected) Loading(playerState.error ?: "Connecting player…")
                     else if (section == BrowserSection.NOW_PLAYING) NowPlayingScreen(playerState, playerRepository) { editorTrackIds = listOf(it.stableId) }
                     else QueuesScreen(playerState, playerRepository, { editorTrackIds = listOf(it.stableId) }, actions.createPlaylist,
-                        queueQuery, projection.queueRows, selectedSet, { id -> selectedIds = if (id in selectedSet) selectedIds - id else selectedIds + id },
+                        queueQuery, projection.queueRows, projection.loading, selectedSet, { id -> selectedIds = if (id in selectedSet) selectedIds - id else selectedIds + id },
                         { id -> if (id !in selectedSet) selectedIds = selectedIds + id })
                 }
                 state.permissionRequired -> PermissionRequired(actions.requestAudioPermission)
@@ -573,9 +601,13 @@ private fun BrowserTopBar(
     onBack: () -> Unit,
     onSettings: () -> Unit,
     showSearchPlayback: Boolean,
+    showRemainingOptions: Boolean,
     canPlaySearchResults: Boolean,
+    canPlayRemaining: Boolean,
     onPlaySearchResults: () -> Unit,
     onShuffleSearchResults: () -> Unit,
+    onPlayRemaining: () -> Unit,
+    onShuffleRemaining: () -> Unit,
     showRules: Boolean,
     onRules: () -> Unit,
     onNewPlaylist: () -> Unit,
@@ -620,11 +652,72 @@ private fun BrowserTopBar(
                     }
                 }
                 if (showSearchPlayback) {
-                    PlayerButton(R.drawable.ic_play, "Play all search results", canPlaySearchResults, onPlaySearchResults)
-                    PlayerButton(R.drawable.ic_shuffle, "Shuffle all search results", canPlaySearchResults, onShuffleSearchResults)
+                    if (showRemainingOptions) {
+                        QueueSearchPlaybackButton(
+                            icon = R.drawable.ic_play,
+                            label = "Play all search results",
+                            verb = "Play",
+                            enabled = canPlaySearchResults,
+                            canPlayRemaining = canPlayRemaining,
+                            onAll = onPlaySearchResults,
+                            onRemaining = onPlayRemaining,
+                        )
+                        QueueSearchPlaybackButton(
+                            icon = R.drawable.ic_shuffle,
+                            label = "Shuffle all search results",
+                            verb = "Shuffle",
+                            enabled = canPlaySearchResults,
+                            canPlayRemaining = canPlayRemaining,
+                            onAll = onShuffleSearchResults,
+                            onRemaining = onShuffleRemaining,
+                        )
+                    } else {
+                        PlayerButton(R.drawable.ic_play, "Play all search results", canPlaySearchResults, onPlaySearchResults)
+                        PlayerButton(R.drawable.ic_shuffle, "Shuffle all search results", canPlaySearchResults, onShuffleSearchResults)
+                    }
                 }
                 PlayerButton(R.drawable.ic_settings, "Settings", action = onSettings)
             }
+        }
+    }
+}
+
+@Composable
+private fun QueueSearchPlaybackButton(
+    icon: Int,
+    label: String,
+    verb: String,
+    enabled: Boolean,
+    canPlayRemaining: Boolean,
+    onAll: () -> Unit,
+    onRemaining: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            modifier = Modifier.size(48.dp)
+                .alpha(if (enabled) 1f else .38f)
+                .combinedClickable(
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClick = onAll,
+                    onLongClickLabel = "Choose $verb all or remaining",
+                    onLongClick = { menuExpanded = true },
+                )
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            PlayerIcon(icon, null)
+        }
+        DropdownMenu(menuExpanded, { menuExpanded = false }) {
+            DropdownMenuItem(text = { Text("$verb all") }, enabled = enabled, onClick = {
+                menuExpanded = false
+                onAll()
+            })
+            DropdownMenuItem(text = { Text("$verb remaining") }, enabled = canPlayRemaining, onClick = {
+                menuExpanded = false
+                onRemaining()
+            })
         }
     }
 }

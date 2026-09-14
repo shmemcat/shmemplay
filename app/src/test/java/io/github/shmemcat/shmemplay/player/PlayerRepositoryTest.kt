@@ -156,6 +156,38 @@ class PlayerRepositoryTest {
             assertTrue(saved.active!!.policy.shuffle)
         } finally { repository.close(); directory.deleteRecursively() }
     }
+    @Test fun queueSearchActionsCreateNewQueuesFromPlayableMatchesWithoutChangingSource() {
+        val directory = Files.createTempDirectory("queue-search-play-test").toFile()
+        val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
+        val sourceEntries = listOf(
+            QueueTrack("A", "content://a", "Saved A", unavailable = true),
+            QueueTrack("B", "content://b", "Saved B", artist = "Old Artist"),
+            QueueTrack("C", "content://c", "Saved C"),
+        )
+        val source = QueueBook().create("source", "Source", sourceEntries, "B", shuffle = true)
+        File(directory, "player-queues-v1.bin").outputStream().use { QueueCodec.write(source, it) }
+        val repository = PlayerRepository(context)
+        try {
+            waitUntil { repository.state.value.ready }
+            val engine = Engine(); repository.attach(engine)
+            val matches = listOf(sourceEntries[0], sourceEntries[2], sourceEntries[1])
+            repository.playQueueMatchesInOrder("Search - saved", matches)
+            waitUntil { repository.state.value.book.queues.size == 2 && engine.playing }
+            val ordered = repository.state.value.book.active!!
+            assertEquals(listOf(sourceEntries[2], sourceEntries[1]), ordered.entries)
+            assertEquals("C", ordered.currentId)
+            assertFalse(ordered.policy.shuffle)
+            assertEquals(source.queues.single(), repository.state.value.book.queues.first())
+
+            repository.shuffleQueueMatches("Search - saved", matches)
+            waitUntil { repository.state.value.book.queues.size == 3 }
+            val shuffled = repository.state.value.book.active!!
+            assertTrue(shuffled.policy.shuffle)
+            assertEquals(listOf(sourceEntries[2], sourceEntries[1]), shuffled.shuffled(false).entries)
+            assertEquals(shuffled.entries.first().id, shuffled.currentId)
+            assertEquals(source.queues.single(), repository.state.value.book.queues.first())
+        } finally { repository.close(); directory.deleteRecursively() }
+    }
     @Test fun corruptSavedQueuesAreRetainedAndBlockMutations() {
         val directory=Files.createTempDirectory("queue-corrupt-test").toFile()
         val file=File(directory,"player-queues-v1.bin");val bytes=byteArrayOf(1,2,3,4);file.writeBytes(bytes)

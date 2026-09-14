@@ -113,7 +113,7 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
     if (policy) QueuePolicyDialog(q, repository) { policy = false }
 }
 
-@Composable internal fun QueuesScreen(state: PlayerUiState, repository: PlayerRepository, onPlaylist: (LibraryTrack) -> Unit, save: (String, List<LibraryTrack>) -> Unit, query: String, rows: List<QueueTrack>, selected: Set<String>, onToggle: (String) -> Unit, onSelect: (String) -> Unit) {
+@Composable internal fun QueuesScreen(state: PlayerUiState, repository: PlayerRepository, onPlaylist: (LibraryTrack) -> Unit, save: (String, List<LibraryTrack>) -> Unit, query: String, rows: List<QueueTrack>, loading: Boolean, selected: Set<String>, onToggle: (String) -> Unit, onSelect: (String) -> Unit) {
     val q = state.book.viewed
     var picker by remember { mutableStateOf(false) }
     var options by remember { mutableStateOf<QueueTrack?>(null) }
@@ -128,11 +128,24 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
         pendingOrder?.let { order -> val byId = rows.associateBy { it.id }; order.mapNotNull(byId::get) } ?: rows
     }
     val rowIds = remember(displayedRows) { displayedRows.map { it.id } }
-    LaunchedEffect(q?.id, query) { listState.scrollToItem(0) }
+    var initialScrollPending by remember(q?.id) { mutableStateOf(true) }
+    var lastQuery by remember(q?.id) { mutableStateOf(query) }
+    LaunchedEffect(q?.id, query, rows, loading) {
+        if (q == null) return@LaunchedEffect
+        if (query != lastQuery) {
+            lastQuery = query
+            initialScrollPending = false
+            listState.scrollToItem(0)
+        } else if (initialScrollPending && !loading) {
+            listState.scrollToItem(rows.indexOfFirst { it.id == q.currentId }.coerceAtLeast(0))
+            initialScrollPending = false
+        }
+    }
     if (q == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Your queues will appear here when you play a song.", modifier = Modifier.padding(24.dp), textAlign = TextAlign.Center) }
         return
     }
+    val playedIds = remember(q.entries, q.currentId) { entriesBeforeCurrent(q) }
     Column(Modifier.fillMaxSize().padding(top = 8.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = { picker = true }, modifier = Modifier.weight(1f)) {
@@ -165,7 +178,7 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
                     val marked = entry.id == q.currentId
                     val inactive = q.id != state.book.activeId
                     val textColor = if (inactive) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f) else MaterialTheme.colorScheme.onSurface
-                    val fontStyle = if (inactive) FontStyle.Italic else FontStyle.Normal
+                    val fontStyle = if (entry.id in playedIds) FontStyle.Italic else FontStyle.Normal
                     Row(draggedRow(entry.id, rowIds, drag, 56.dp).fillMaxWidth().height(56.dp)
                         .background(if (marked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (inactive) .35f else .8f) else MaterialTheme.colorScheme.surface)
                         .combinedClickable(onClick = {
@@ -187,7 +200,7 @@ internal val LocalSongPlayback = staticCompositionLocalOf<SongPlaybackActions?> 
                             Text(detail, style = MaterialTheme.typography.bodySmall, fontStyle = fontStyle, color = textColor,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text(playerTime(entry.durationMs), style = MaterialTheme.typography.bodySmall, color = textColor)
+                        Text(playerTime(entry.durationMs), style = MaterialTheme.typography.bodySmall, fontStyle = fontStyle, color = textColor)
                         CompositionLocalProvider(LocalContentColor provides textColor) {
                             PlayerButton(R.drawable.ic_ellipsis, "Options for " + entry.title) { options = entry }
                         }

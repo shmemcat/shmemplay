@@ -3,6 +3,7 @@ package io.github.shmemcat.shmemplay.ui
 import io.github.shmemcat.shmemplay.domain.SearchText
 import io.github.shmemcat.shmemplay.domain.SubstringSearchIndex
 import io.github.shmemcat.shmemplay.player.QueueTrack
+import io.github.shmemcat.shmemplay.player.MusicQueue
 import io.github.shmemcat.shmemplay.player.toLibraryTrack
 import io.github.shmemcat.shmemplay.playlists.PlaylistEntry
 import io.github.shmemcat.shmemplay.playlists.PlaylistSnapshot
@@ -21,9 +22,24 @@ internal fun showsSearchPlaybackActions(section: BrowserSection, detail: Browser
         BrowserSection.ALBUMS,
         BrowserSection.ARTISTS,
         BrowserSection.GENRES,
-        BrowserSection.PLAYLISTS -> true
-        BrowserSection.QUEUES, BrowserSection.NOW_PLAYING -> false
+        BrowserSection.PLAYLISTS,
+        BrowserSection.QUEUES -> true
+        BrowserSection.NOW_PLAYING -> false
     }
+
+/** Position-based progress in this queue's current order; this is not a listening-history log. */
+internal fun entriesBeforeCurrent(queue: MusicQueue): Set<String> {
+    val index = queue.entries.indexOfFirst { it.id == queue.currentId }
+    return if (index < 0) emptySet() else queue.entries.take(index).mapTo(hashSetOf(), QueueTrack::id)
+}
+
+internal fun remainingQueueMatches(queue: MusicQueue?, matches: List<QueueTrack>): List<QueueTrack> {
+    if (queue == null) return emptyList()
+    val index = queue.entries.indexOfFirst { it.id == queue.currentId }
+    if (index < 0) return emptyList()
+    val matchingIds = matches.mapTo(hashSetOf(), QueueTrack::id)
+    return queue.entries.drop(index).filter { it.id in matchingIds && !it.unavailable }
+}
 
 /** Metadata groups publish first; the substring accelerator is attached in a second background stage. */
 internal class BrowserLibraryIndex private constructor(

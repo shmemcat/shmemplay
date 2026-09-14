@@ -2,6 +2,8 @@ package io.github.shmemcat.shmemplay.ui
 
 import android.net.Uri
 import io.github.shmemcat.shmemplay.player.toQueueTrack
+import io.github.shmemcat.shmemplay.player.MusicQueue
+import io.github.shmemcat.shmemplay.player.QueueTrack
 import io.github.shmemcat.shmemplay.playlists.PlaylistDocument
 import io.github.shmemcat.shmemplay.playlists.PlaylistEntry
 import io.github.shmemcat.shmemplay.playlists.PlaylistSnapshot
@@ -27,19 +29,28 @@ class BrowserSearchTest {
     private fun request(section: BrowserSection, query: String, detail: BrowserDetail? = null, playlists: List<PlaylistSnapshot> = emptyList()) =
         BrowserSearchRequest(BrowserLibraryIndex.indexed(tracks), BrowserPlaylistIndex(playlists), null, section, detail, query, "All")
 
-    @Test fun searchPlaybackActionsOnlyAppearForMainCategorySearches() {
+    @Test fun searchPlaybackActionsAppearForLibraryAndQueueSearches() {
         val main = listOf(
             BrowserSection.SONGS,
             BrowserSection.ALBUMS,
             BrowserSection.ARTISTS,
             BrowserSection.GENRES,
             BrowserSection.PLAYLISTS,
+            BrowserSection.QUEUES,
         )
         main.forEach { assertTrue(it.name, showsSearchPlaybackActions(it, null, "moon")) }
-        assertFalse(showsSearchPlaybackActions(BrowserSection.QUEUES, null, "moon"))
         assertFalse(showsSearchPlaybackActions(BrowserSection.NOW_PLAYING, null, "moon"))
         assertFalse(showsSearchPlaybackActions(BrowserSection.SONGS, null, "   "))
         assertFalse(showsSearchPlaybackActions(BrowserSection.SONGS, BrowserDetail(DetailKind.ALBUM, "Album"), "moon"))
+    }
+
+    @Test fun queueProgressUsesSourceOrderEvenWhenSearchHidesCurrentSong() {
+        val entries = tracks.map { it.toQueueTrack() } + QueueTrack("missing", "content://missing", "Missing", unavailable = true)
+        val queue = MusicQueue("q", "Queue", 1, entries, currentId = entries[1].id)
+        assertEquals(setOf(entries[0].id), entriesBeforeCurrent(queue))
+        assertEquals(listOf(entries[1], entries[2]), remainingQueueMatches(queue, entries))
+        assertEquals(listOf(entries[2]), remainingQueueMatches(queue, listOf(entries[0], entries[2], entries[3])))
+        assertTrue(remainingQueueMatches(queue.copy(currentId = null), entries).isEmpty())
     }
 
     @Test fun cachedSongRowsAreNeverReplacedByAFalseEmptyStateWhileIndexesBuild() {

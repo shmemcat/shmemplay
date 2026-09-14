@@ -99,7 +99,7 @@ Reference 3 visibly demonstrates the next-queue configuration and extra options.
 - Queue name/number dropdown at the top and a remove-queue action.
 - Resume/play control, sorting, current entry number / total count, total duration, Save as playlist, and queue options.
 - Dense artwork rows with title, artist/album, duration, three-dot menu, and dedicated reorder handles. Long-press selection remains separate from dragging a handle.
-- A clear active-entry highlight, plus a distinguishable saved-position marker when viewing an inactive queue. Do not dim inactive queues enough to hurt readability.
+- A clear active-entry highlight, plus a distinguishable saved-position marker when viewing an inactive queue. On opening any queue, scroll its saved current entry to the top of the visible list where space permits; near the end or in a short queue, let the list stop naturally. Viewing a queue must not switch active playback. Do not dim inactive queues enough to hurt readability.
 - Local queue filtering and continuous fast scrolling. Filtering never removes entries from the actual queue.
 - A compact queue-picker popup with reorder handles, viewed selection, separate active-playback indicator, rename, and remove. Rename opens a small naming dialog.
 
