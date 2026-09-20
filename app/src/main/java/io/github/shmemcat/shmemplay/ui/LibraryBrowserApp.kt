@@ -1158,11 +1158,21 @@ private fun SongRow(
 @Composable
 internal fun AlbumArtwork(track: LibraryTrack, selected: Boolean, modifier: Modifier = Modifier.size(44.dp)) {
     val context = LocalContext.current
-    val bitmap by produceState<Bitmap?>(null, track.stableId) {
-        value = withContext(Dispatchers.IO) { ArtworkLoader.load(context, track) }
+    var requestedSize by remember(track.stableId) { mutableStateOf<Size?>(null) }
+    var bitmap by remember(track.stableId) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(track.stableId, requestedSize) {
+        val size = requestedSize ?: return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) { ArtworkLoader.load(context, track, size) }
+        if (loaded != null) bitmap = loaded
     }
     Box(
-        modifier.clip(RoundedCornerShape(6.dp)),
+        modifier
+            .onSizeChanged { size ->
+                if (size.width > 0 && size.height > 0) {
+                    requestedSize = Size(size.width, size.height)
+                }
+            }
+            .clip(RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -1873,18 +1883,34 @@ private fun formatDuration(durationMs: Long): String {
 }
 
 private object ArtworkLoader {
-    private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
-        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
+    private data class CachedArtwork(
+        val bitmap: Bitmap,
+        val requestedWidth: Int,
+        val requestedHeight: Int,
+    )
+
+    private val cache = object : LruCache<String, CachedArtwork>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: CachedArtwork) = value.bitmap.allocationByteCount
     }
     private val failed = LruCache<String, Long>(256)
 
-    fun load(context: Context, track: LibraryTrack): Bitmap? {
+    fun load(context: Context, track: LibraryTrack, requestedSize: Size): Bitmap? {
         val cacheKey = track.albumId?.let { "${track.identity.volumeName}:album:$it" } ?: track.stableId
-        cache.get(cacheKey)?.let { return it }
+        val requestedWidth = requestedSize.width.coerceAtLeast(1)
+        val requestedHeight = requestedSize.height.coerceAtLeast(1)
+        cache.get(cacheKey)?.let { cached ->
+            if (cached.requestedWidth >= requestedWidth && cached.requestedHeight >= requestedHeight) {
+                return cached.bitmap
+            }
+        }
         failed.get(cacheKey)?.let { if (android.os.SystemClock.elapsedRealtime() - it < 60000) return null }
         val bitmap = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                context.contentResolver.loadThumbnail(track.contentUri, Size(160, 160), null)
+                context.contentResolver.loadThumbnail(
+                    track.contentUri,
+                    Size(requestedWidth, requestedHeight),
+                    null,
+                )
             } else {
                 MediaMetadataRetriever().run {
                     try {
@@ -1892,9 +1918,18 @@ private object ArtworkLoader {
                         embeddedPicture?.let { bytes ->
                             val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                             android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                            var sample = 1
-                            while (bounds.outWidth / sample > 320 || bounds.outHeight / sample > 320) sample *= 2
-                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+                            val sample = artworkSampleSize(
+                                bounds.outWidth,
+                                bounds.outHeight,
+                                requestedWidth,
+                                requestedHeight,
+                            )
+                            android.graphics.BitmapFactory.decodeByteArray(
+                                bytes,
+                                0,
+                                bytes.size,
+                                android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+                            )
                         }
                     } finally {
                         release()
@@ -1902,9 +1937,30 @@ private object ArtworkLoader {
                 }
             }
         }.getOrNull()
-        if (bitmap != null) cache.put(cacheKey, bitmap) else failed.put(cacheKey, android.os.SystemClock.elapsedRealtime())
+        if (bitmap != null) {
+            cache.put(cacheKey, CachedArtwork(bitmap, requestedWidth, requestedHeight))
+        } else {
+            failed.put(cacheKey, android.os.SystemClock.elapsedRealtime())
+        }
         return bitmap
     }
+}
+
+internal fun artworkSampleSize(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    requestedWidth: Int,
+    requestedHeight: Int,
+): Int {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || requestedWidth <= 0 || requestedHeight <= 0) return 1
+    var sample = 1
+    while (
+        sourceWidth / (sample * 2) >= requestedWidth &&
+        sourceHeight / (sample * 2) >= requestedHeight
+    ) {
+        sample *= 2
+    }
+    return sample
 }
 
 private fun sectionIcon(section: BrowserSection): Int = when(section) {
