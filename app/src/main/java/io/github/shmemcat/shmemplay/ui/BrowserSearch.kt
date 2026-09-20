@@ -16,6 +16,16 @@ internal enum class BrowserSection(val label: String, val glyph: String) {
 internal enum class DetailKind { ALBUM, ARTIST, GENRE, PLAYLIST }
 internal data class BrowserDetail(val kind: DetailKind, val key: String)
 
+internal enum class PlaylistSort(val label: String) {
+    DEFAULT("Default order"),
+    SONG_ASC("Song A–Z"),
+    SONG_DESC("Song Z–A"),
+    ARTIST_ASC("Artist A–Z"),
+    ARTIST_DESC("Artist Z–A"),
+    ALBUM_ASC("Album A–Z"),
+    ALBUM_DESC("Album Z–A"),
+}
+
 internal fun showsSearchPlaybackActions(section: BrowserSection, detail: BrowserDetail?, query: String): Boolean =
     detail == null && query.isNotBlank() && when (section) {
         BrowserSection.SONGS,
@@ -91,7 +101,7 @@ internal class BrowserQueueIndex(val entries: List<QueueTrack>, checkCancelled: 
     fun rows(query: SearchText.Query, checkCancelled: () -> Unit) = search.search(query, checkCancelled).rows
 }
 
-/** Playlist names/paths and entry sorting are also independent of the query. */
+/** Playlist names/paths are independent of the query. Entries stay in their M3U order here. */
 internal class BrowserPlaylistIndex(val snapshots: List<PlaylistSnapshot>, checkCancelled: () -> Unit = {}) {
     data class Entry(val source: PlaylistEntry, val path: String)
     data class Playlist(val snapshot: PlaylistSnapshot, val name: String, val entries: List<Entry>) {
@@ -103,13 +113,14 @@ internal class BrowserPlaylistIndex(val snapshots: List<PlaylistSnapshot>, check
         Playlist(snapshot, SearchText.normalize(snapshot.document.displayName), snapshot.entries.mapIndexed { i, entry ->
             if (i % 256 == 0) checkCancelled()
             Entry(entry, SearchText.normalize(entry.normalizedPath))
-        }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.source.track?.title ?: it.source.normalizedPath.substringAfterLast('/') }))
+        })
     }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.snapshot.document.displayName })
 }
 
 internal data class BrowserSearchRequest(
     val library: BrowserLibraryIndex?, val playlists: BrowserPlaylistIndex?, val queue: BrowserQueueIndex?,
     val section: BrowserSection, val detail: BrowserDetail?, val query: String, val playlistFilter: String,
+    val playlistSort: PlaylistSort = PlaylistSort.DEFAULT,
 )
 
 internal data class PlaylistSearchRow(val snapshot: PlaylistSnapshot, val songs: List<LibraryTrack>, val missingFiles: Boolean)
@@ -170,10 +181,11 @@ internal fun searchBrowser(request: BrowserSearchRequest, checkCancelled: () -> 
             ?: return result(emptyList())
         if (playlist.snapshot.sourceError != null) return result(emptyList())
         val all = query.matches(playlist.name)
-        val entries = playlist.entries.filterIndexed { i, entry ->
+        val matchingEntries = playlist.entries.filterIndexed { i, entry ->
             if (i % 256 == 0) checkCancelled()
             all || entry.source.track?.stableId in matches || query.matches(entry.path)
-        }.map { it.source }
+        }
+        val entries = sortPlaylistEntries(matchingEntries, request.playlistSort).map { it.source }
         return result(entries.mapNotNull(PlaylistEntry::track), entries = entries)
     }
     return when (request.section) {
@@ -201,6 +213,34 @@ internal fun searchBrowser(request: BrowserSearchRequest, checkCancelled: () -> 
         }
         else -> BrowserProjection()
     }
+}
+
+private fun sortPlaylistEntries(
+    entries: List<BrowserPlaylistIndex.Entry>,
+    sort: PlaylistSort,
+): List<BrowserPlaylistIndex.Entry> {
+    if (sort == PlaylistSort.DEFAULT) return entries
+    val bySong = compareBy<BrowserPlaylistIndex.Entry, String>(String.CASE_INSENSITIVE_ORDER) {
+        it.source.track?.title ?: it.source.normalizedPath.substringAfterLast('/')
+    }
+    val comparator = when (sort) {
+        PlaylistSort.DEFAULT -> return entries
+        PlaylistSort.SONG_ASC -> bySong
+        PlaylistSort.SONG_DESC -> bySong.reversed()
+        PlaylistSort.ARTIST_ASC -> compareBy<BrowserPlaylistIndex.Entry, String>(String.CASE_INSENSITIVE_ORDER) {
+            it.source.track?.artist.orEmpty()
+        }.then(bySong)
+        PlaylistSort.ARTIST_DESC -> compareBy<BrowserPlaylistIndex.Entry, String>(String.CASE_INSENSITIVE_ORDER) {
+            it.source.track?.artist.orEmpty()
+        }.then(bySong).reversed()
+        PlaylistSort.ALBUM_ASC -> compareBy<BrowserPlaylistIndex.Entry, String>(String.CASE_INSENSITIVE_ORDER) {
+            it.source.track?.album.orEmpty()
+        }.then(bySong)
+        PlaylistSort.ALBUM_DESC -> compareBy<BrowserPlaylistIndex.Entry, String>(String.CASE_INSENSITIVE_ORDER) {
+            it.source.track?.album.orEmpty()
+        }.then(bySong).reversed()
+    }
+    return entries.sortedWith(comparator)
 }
 
 private fun groupValue(track: LibraryTrack, kind: DetailKind) = when (kind) {

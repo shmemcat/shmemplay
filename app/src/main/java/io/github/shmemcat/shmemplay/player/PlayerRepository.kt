@@ -197,7 +197,7 @@ class PlayerRepository internal constructor(context: Context) {
         if (tracks.isEmpty()) before else before.create(UUID.randomUUID().toString(), name, tracks.map { it.toQueueTrack() }, tracks.first().stableId).copy(activeId = before.activeId)
     }
     fun createSnapshot(name: String, tracks: List<QueueTrack>, start: String) = change(true, true) {
-        it.create(UUID.randomUUID().toString(), name, tracks, start)
+        it.create(UUID.randomUUID().toString(), name, tracks, start, shuffle = false)
     }
     fun view(id: String) = change { it.view(id) }
     fun resume(id: String, entry: String? = null) = change(true, true) { it.activate(id, entry) }

@@ -68,12 +68,16 @@ class QueuesTest {
         assertEquals(SongEnd.REPEAT, three.active!!.policy.songEnd)
         assertEquals(SongEnd.PLAY_NEXT, three.queues.first { it.id == "one" }.policy.songEnd)
     }
-    @Test fun explicitlyOrderedCreationOverridesInheritedShuffle() {
-        val shuffled = book().edit("one") { it.copy(policy = it.policy.copy(shuffle = true)) }
-        val ordered = shuffled.create("two", "Two", tracks("E", "F", "G"), "E", shuffle = false).active!!
+    @Test fun songSelectionPreservesSourceOrderAndDoesNotInheritShuffle() {
+        val shuffled = book().edit("one") {
+            it.copy(policy = it.policy.copy(songEnd = SongEnd.REPEAT, queueEnd = QueueEnd.REPEAT, shuffle = true))
+        }
+        val ordered = shuffled.create("two", "Two", tracks("E", "F", "G", "H"), "G").active!!
         assertFalse(ordered.policy.shuffle)
-        assertEquals(listOf("E", "F", "G"), ordered.entries.map { it.id })
-        assertEquals("E", ordered.currentId)
+        assertEquals(listOf("E", "F", "G", "H"), ordered.entries.map { it.id })
+        assertEquals("G", ordered.currentId)
+        assertEquals(SongEnd.REPEAT, ordered.policy.songEnd)
+        assertEquals(QueueEnd.REPEAT, ordered.policy.queueEnd)
     }
     @Test fun removingCurrentAdvancesAndFinalRemovalStopsExplicitly() {
         val q = book().active!!.removed(setOf("B", "C"))

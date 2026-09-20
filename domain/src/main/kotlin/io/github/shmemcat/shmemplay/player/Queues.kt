@@ -102,13 +102,14 @@ data class QueueBook(
     val viewed: MusicQueue? get() = queues.firstOrNull { it.id == viewedId }
     fun edit(id: String, transform: (MusicQueue) -> MusicQueue) = copy(queues = queues.map { if (it.id == id) transform(it) else it })
     fun view(id: String) = if (queues.any { it.id == id }) copy(viewedId = id) else this
-    fun create(id: String, name: String, tracks: List<QueueTrack>, startId: String, shuffle: Boolean? = null, random: Random = Random.Default): QueueBook {
+    /** End behavior follows the newest queue; shuffle is determined only by this play action. */
+    fun create(id: String, name: String, tracks: List<QueueTrack>, startId: String, shuffle: Boolean = false, random: Random = Random.Default): QueueBook {
         require(queues.none { it.id == id })
         val entries = tracks.distinctBy { it.id }.toList()
         require(entries.any { it.id == startId })
         val inherited = queues.maxByOrNull { it.created }?.policy ?: QueuePolicy()
         val queue = MusicQueue(id, name.ifBlank { "Queue $nextCreation" }, nextCreation, entries, startId,
-            policy = inherited.copy(shuffle = false)).shuffled(shuffle ?: inherited.shuffle, random)
+            policy = inherited.copy(shuffle = false)).shuffled(shuffle, random)
         return copy(queues = queues + queue, viewedId = id, activeId = id, nextCreation = nextCreation + 1)
     }
     /** Retain source order so unshuffle can restore it even when playback starts at a random song. */

@@ -4,7 +4,7 @@ This is the current implementation status for the approved [music player plan](m
 
 ## Implemented
 
-- Independent persistent snapshot queues, separate viewed/active queues, per-queue current file identity and elapsed position, rename/delete/picker reordering, and settings inheritance by creation chronology.
+- Independent persistent snapshot queues, separate viewed/active queues, per-queue current file identity and elapsed position, rename/delete/picker reordering, and end-behavior inheritance by creation chronology. Shuffle is set by the play action instead of inherited.
 - Duplicate-free creation, move-existing append/play-next, stable-current sorting/reordering, removal of the playing entry, shuffle anchored on the current entry, and restoration after additions/removals and playback advancement.
 - Explicit song-end/queue-end policy, next-queue resume/wrap options, five-second previous threshold, and a queue-specific one-shot stop-after marker.
 - Media3 1.11.0 ExoPlayer in a MediaSessionService, audio focus, background playback wiring, media notification/session controls, pause on noisy-route disconnect, opt-in reconnect, and configurable raw headset double/triple presses.

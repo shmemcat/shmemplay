@@ -156,6 +156,7 @@ fun LibraryBrowserApp(
     var sectionName by rememberSaveable { mutableStateOf(BrowserSection.NOW_PLAYING.name) }
     var detailKind by rememberSaveable { mutableStateOf<String?>(null) }
     var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var playlistSortName by rememberSaveable(detailKey) { mutableStateOf(PlaylistSort.DEFAULT.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var queueQuery by rememberSaveable { mutableStateOf("") }
     var selectedIds by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -187,6 +188,7 @@ fun LibraryBrowserApp(
     val section = BrowserSection.valueOf(sectionName)
     val playerSection = section == BrowserSection.QUEUES || section == BrowserSection.NOW_PLAYING
     val detail = detailKind?.let { kind -> detailKey?.let { BrowserDetail(DetailKind.valueOf(kind), it) } }
+    val playlistSort = PlaylistSort.valueOf(playlistSortName)
     val songsScrollState = rememberLazyListState()
     val albumsScrollState = rememberLazyListState()
     val artistsScrollState = rememberLazyListState()
@@ -246,7 +248,7 @@ fun LibraryBrowserApp(
     val request = BrowserSearchRequest(
         libraryIndex?.takeIf { !playerSection && it.tracks === tracks },
         playlistIndex?.takeIf { (section == BrowserSection.PLAYLISTS || detail?.kind == DetailKind.PLAYLIST) && it.snapshots === playlists },
-        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.entries === queueEntries }, section, detail, sourceQuery, playlistFilter,
+        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.entries === queueEntries }, section, detail, sourceQuery, playlistFilter, playlistSort,
     )
     val searchResult by produceState<Pair<BrowserSearchRequest, BrowserProjection>?>(null, request) {
         value = withContext(Dispatchers.Default) {
@@ -292,7 +294,7 @@ fun LibraryBrowserApp(
         val available = tracks.mapTo(hashSetOf(), LibraryTrack::stableId)
         selectedIds = selectedIds.filter { it in available || it in queueTracksById }
     }
-    LaunchedEffect(query) {
+    LaunchedEffect(query, playlistSort) {
         songsScrollState.scrollToItem(0)
         albumsScrollState.scrollToItem(0)
         artistsScrollState.scrollToItem(0)
@@ -380,6 +382,8 @@ fun LibraryBrowserApp(
                 )
                 if (openPlaylist != null) PlaylistActionBar(
                     playlist = openPlaylist,
+                    sort = playlistSort,
+                    onSort = { playlistSortName = it.name },
                     menuExpanded = playlistMenuExpanded,
                     onMenuExpanded = { playlistMenuExpanded = it },
                     canPlay = canPlayPlaylist,
@@ -413,9 +417,12 @@ fun LibraryBrowserApp(
                         optionsExpanded = optionsExpanded,
                         advancedExpanded = advancedExpanded,
                         rangeAvailable = currentSelected >= 2,
+                        canUseActiveQueue = playerState.book.activeId != null,
+                        canAddToQueue = playerRepository != null,
                         onOptionsExpanded = { optionsExpanded = it },
                         onQueue = { optionsExpanded = false; addSelectionToQueue = true },
                         onPlayNext = { optionsExpanded = false; playerState.book.activeId?.let { playerRepository?.insert(it, selectedTracks, true) } },
+                        onAppendToActiveQueue = { optionsExpanded = false; playerState.book.activeId?.let { playerRepository?.insert(it, selectedTracks) } },
                         onAdvancedExpanded = { advancedExpanded = it },
                         onPlaylist = {
                             optionsExpanded = false
@@ -725,6 +732,8 @@ private fun QueueSearchPlaybackButton(
 @Composable
 private fun PlaylistActionBar(
     playlist: PlaylistSnapshot,
+    sort: PlaylistSort,
+    onSort: (PlaylistSort) -> Unit,
     menuExpanded: Boolean,
     onMenuExpanded: (Boolean) -> Unit,
     canPlay: Boolean,
@@ -735,31 +744,49 @@ private fun PlaylistActionBar(
     onDelete: () -> Unit,
     onSelectAll: () -> Unit,
 ) {
+    var sortMenuExpanded by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxWidth().semantics { testTag = "playlist-action-bar" }) {
             Row(
-                modifier = Modifier.fillMaxWidth().height(52.dp).padding(end = 8.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                PlayerButton(R.drawable.ic_play, "Play playlist in order", canPlay, onPlay)
-                PlayerButton(R.drawable.ic_shuffle, "Shuffle playlist", canPlay, onShuffle)
                 Box {
-                    PlayerButton(R.drawable.ic_ellipsis, "Playlist options") { onMenuExpanded(true) }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { onMenuExpanded(false) },
-                    ) {
-                        if (playlist.live) DropdownMenuItem(text = { Text("Edit rules / repair sources") }, onClick = { onMenuExpanded(false); onRules() })
-                        DropdownMenuItem(text = { Text("Rename playlist") }, onClick = {
-                            onMenuExpanded(false); onRename()
-                        })
-                        DropdownMenuItem(text = { Text("Delete playlist") }, onClick = {
-                            onMenuExpanded(false); onDelete()
-                        })
-                        DropdownMenuItem(text = { Text("Select all") }, onClick = {
-                            onMenuExpanded(false); onSelectAll()
-                        })
+                    PlayerButton(R.drawable.ic_arrow_down_wide_narrow, "Sort playlist: ${sort.label}") { sortMenuExpanded = true }
+                    DropdownMenu(sortMenuExpanded, { sortMenuExpanded = false }) {
+                        PlaylistSort.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                trailingIcon = { if (sort == option) Text("✓") },
+                                onClick = {
+                                    sortMenuExpanded = false
+                                    onSort(option)
+                                },
+                            )
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PlayerButton(R.drawable.ic_play, "Play playlist in order", canPlay, onPlay)
+                    PlayerButton(R.drawable.ic_shuffle, "Shuffle playlist", canPlay, onShuffle)
+                    Box {
+                        PlayerButton(R.drawable.ic_ellipsis, "Playlist options") { onMenuExpanded(true) }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { onMenuExpanded(false) },
+                        ) {
+                            if (playlist.live) DropdownMenuItem(text = { Text("Edit rules / repair sources") }, onClick = { onMenuExpanded(false); onRules() })
+                            DropdownMenuItem(text = { Text("Rename playlist") }, onClick = {
+                                onMenuExpanded(false); onRename()
+                            })
+                            DropdownMenuItem(text = { Text("Delete playlist") }, onClick = {
+                                onMenuExpanded(false); onDelete()
+                            })
+                            DropdownMenuItem(text = { Text("Select all") }, onClick = {
+                                onMenuExpanded(false); onSelectAll()
+                            })
+                        }
                     }
                 }
             }
@@ -1304,9 +1331,12 @@ private fun SelectionBar(
     optionsExpanded: Boolean,
     advancedExpanded: Boolean,
     rangeAvailable: Boolean,
+    canUseActiveQueue: Boolean,
+    canAddToQueue: Boolean,
     onOptionsExpanded: (Boolean) -> Unit,
     onQueue: () -> Unit,
     onPlayNext: () -> Unit,
+    onAppendToActiveQueue: () -> Unit,
     onAdvancedExpanded: (Boolean) -> Unit,
     onPlaylist: () -> Unit,
     onSelectAll: () -> Unit,
@@ -1335,9 +1365,29 @@ private fun SelectionBar(
                         SelectionActionLabel("⋮", "Options")
                     }
                     DropdownMenu(expanded = optionsExpanded, onDismissRequest = { onOptionsExpanded(false) }) {
-                        DropdownMenuItem(text = { Text("Add/remove from playlists") }, onClick = onPlaylist)
-                        DropdownMenuItem(text = { Text("Add to a queue") }, onClick = onQueue)
-                        DropdownMenuItem(text = { Text("Play after current song") }, onClick = onPlayNext)
+                        DropdownMenuItem(
+                            text = { Text("Play after current song") },
+                            leadingIcon = { PlayerIcon(R.drawable.ic_skip_forward, null) },
+                            enabled = canUseActiveQueue,
+                            onClick = onPlayNext,
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Add to currently playing queue") },
+                            leadingIcon = { PlayerIcon(R.drawable.ic_list_video, null) },
+                            enabled = canUseActiveQueue,
+                            onClick = onAppendToActiveQueue,
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Add to a queue") },
+                            leadingIcon = { PlayerIcon(R.drawable.ic_list_music, null) },
+                            enabled = canAddToQueue,
+                            onClick = onQueue,
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Add/remove from playlists") },
+                            leadingIcon = { PlayerIcon(R.drawable.ic_list_plus, null) },
+                            onClick = onPlaylist,
+                        )
                     }
                 }
                 Box {
