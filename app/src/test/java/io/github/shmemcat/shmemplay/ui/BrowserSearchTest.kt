@@ -62,6 +62,17 @@ class BrowserSearchTest {
         assertTrue(projectionWhileIndexing(BrowserSection.SONGS, null, "moon", tracks).loading)
     }
 
+    @Test fun unfilteredQueueKeepsRowsDuringReorderWithoutWaitingForSearchIndex() {
+        val entries = tracks.map { it.toQueueTrack() } + QueueTrack("missing", "content://missing", "Missing", unavailable = true)
+        listOf(entries, entries.reversed()).forEach { order ->
+            val result = projectionWhileIndexing(BrowserSection.QUEUES, null, "  ", tracks, order)
+            assertFalse(result.loading)
+            assertSame(order, result.queueRows)
+            assertEquals(order.map { it.id }, result.trackIds)
+        }
+        assertTrue(projectionWhileIndexing(BrowserSection.QUEUES, null, "moon", tracks, entries).loading)
+    }
+
     @Test fun browseStageShowsCachedSongsAndGroupsBeforeSearchIndexIsReady() {
         val browse = BrowserLibraryIndex.browse(tracks)
         val songs = searchBrowser(BrowserSearchRequest(browse, null, null, BrowserSection.SONGS, null, "", "All"))
@@ -146,6 +157,33 @@ class BrowserSearchTest {
         val result = searchBrowser(query)
         assertEquals(entries, result.queueRows)
         assertEquals(entries.map { it.id }, result.trackIds)
+    }
+
+    @Test fun queueReorderReusesSearchMembershipAndUpdatesDisplayAndPlaybackOrder() {
+        val entries = tracks.map { it.toQueueTrack() }
+        val index = BrowserQueueIndex(entries) {}
+        val search = searchBrowser(request(BrowserSection.QUEUES, "satellites").copy(queue = index))
+        val reordered = entries.reversed()
+        assertTrue(index.matchesContent(reordered.associateBy { it.id }))
+        val result = search.inQueueOrder(reordered)
+        assertFalse(result.loading)
+        assertEquals(listOf(entries[2], entries[1]), result.queueRows)
+        assertEquals(result.queueRows.map { it.id }, result.trackIds)
+        assertEquals(listOf(tracks[2], tracks[1]), result.tracks)
+        assertEquals(entries, index.entries)
+        assertEquals(reordered, searchBrowser(request(BrowserSection.QUEUES, "").copy(queue = index)).inQueueOrder(reordered).queueRows)
+    }
+
+    @Test fun queueContentChangesInvalidateIndexButOrderChangesDoNot() {
+        val entries = tracks.map { it.toQueueTrack() }
+        val index = BrowserQueueIndex(entries) {}
+        assertTrue(index.matchesContent(entries.reversed().associateBy { it.id }))
+        assertFalse(index.matchesContent(entries.drop(1).associateBy { it.id }))
+        assertFalse(index.matchesContent((entries + QueueTrack("new", "content://new", "New")).associateBy { it.id }))
+        val changed = entries.map { it.copy(title = "Renamed") }
+        assertFalse(index.matchesContent(changed.associateBy { it.id }))
+        val replacement = BrowserQueueIndex(changed) {}
+        assertEquals(changed, searchBrowser(request(BrowserSection.QUEUES, "renamed").copy(queue = replacement)).queueRows)
     }
 
     @Test fun replacementIndexReflectsTagChangesAndOldIndexRemainsAnImmutableSnapshot() {

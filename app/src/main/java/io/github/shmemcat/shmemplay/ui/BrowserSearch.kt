@@ -96,9 +96,19 @@ internal class BrowserLibraryIndex private constructor(
 }
 
 internal class BrowserQueueIndex(val entries: List<QueueTrack>, checkCancelled: () -> Unit) {
+    private val content = entries.associateBy(QueueTrack::id)
     val tracks = entries.map(QueueTrack::toLibraryTrack)
     private val search = SubstringSearchIndex(tracks.map { "${it.title} ${it.artist} ${it.album} ${it.genre} ${it.displayName}" }, checkCancelled)
     fun rows(query: SearchText.Query, checkCancelled: () -> Unit) = search.search(query, checkCancelled).rows
+    fun matchesContent(entriesById: Map<String, QueueTrack>): Boolean = content == entriesById
+}
+
+/** Search membership is independent of order; display and playback always use the live queue order. */
+internal fun BrowserProjection.inQueueOrder(entries: List<QueueTrack>): BrowserProjection {
+    if (loading) return this
+    val matches = queueRows.mapTo(hashSetOf(), QueueTrack::id)
+    val ordered = entries.filter { it.id in matches }
+    return BrowserProjection(tracks = ordered.map(QueueTrack::toLibraryTrack), queueRows = ordered)
 }
 
 /** Playlist names/paths are independent of the query. Entries stay in their M3U order here. */
@@ -140,12 +150,13 @@ internal fun projectionWhileIndexing(
     detail: BrowserDetail?,
     query: String,
     cachedTracks: List<LibraryTrack>,
-): BrowserProjection = if (
-    section == BrowserSection.SONGS && detail == null && query.isBlank()
-) {
-    BrowserProjection(tracks = cachedTracks)
-} else {
-    BrowserProjection(loading = true)
+    queueEntries: List<QueueTrack> = emptyList(),
+): BrowserProjection = when {
+    section == BrowserSection.QUEUES && query.isBlank() ->
+        BrowserProjection(tracks = queueEntries.map(QueueTrack::toLibraryTrack), queueRows = queueEntries)
+    section == BrowserSection.SONGS && detail == null && query.isBlank() ->
+        BrowserProjection(tracks = cachedTracks)
+    else -> BrowserProjection(loading = true)
 }
 
 /** One projection feeds visible rows, counts, selection and new queues. */

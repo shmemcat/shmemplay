@@ -238,17 +238,19 @@ fun LibraryBrowserApp(
     }
     val viewedEntries = if (section == BrowserSection.QUEUES) playerState.book.viewed?.entries.orEmpty() else emptyList()
     val queueEntries = remember(viewedEntries) { viewedEntries }
-    val queueIndex by produceState<BrowserQueueIndex?>(null, queueEntries) {
+    // Map equality ignores order, so dragging/sorting does not restart indexing or searching.
+    val queueContent = remember(queueEntries) { queueEntries.associateBy { it.id } }
+    val queueIndex by produceState<BrowserQueueIndex?>(null, queueContent) {
         value = withContext(Dispatchers.Default) {
             val context = coroutineContext
-            BrowserQueueIndex(queueEntries) { context.ensureActive() }
+            BrowserQueueIndex(queueContent.values.toList()) { context.ensureActive() }
         }
     }
     val sourceQuery = when (section) { BrowserSection.QUEUES -> queueQuery; BrowserSection.NOW_PLAYING -> ""; else -> query }
     val request = BrowserSearchRequest(
         libraryIndex?.takeIf { !playerSection && it.tracks === tracks },
         playlistIndex?.takeIf { (section == BrowserSection.PLAYLISTS || detail?.kind == DetailKind.PLAYLIST) && it.snapshots === playlists },
-        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.entries === queueEntries }, section, detail, sourceQuery, playlistFilter, playlistSort,
+        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.matchesContent(queueContent) }, section, detail, sourceQuery, playlistFilter, playlistSort,
     )
     val searchResult by produceState<Pair<BrowserSearchRequest, BrowserProjection>?>(null, request) {
         value = withContext(Dispatchers.Default) {
@@ -257,8 +259,18 @@ fun LibraryBrowserApp(
         }
     }
     val completedProjection = searchResult?.takeIf { it.first == request }?.second
-    // Cached songs do not depend on either background index stage.
-    val projection = completedProjection ?: projectionWhileIndexing(section, detail, sourceQuery, tracks)
+    // Unfiltered queues must never lose their rows while changed content is indexed.
+    // Keeping stable row keys present also preserves the list's scroll anchor.
+    val directProjection = remember(section, detail, sourceQuery, tracks, queueEntries) {
+        projectionWhileIndexing(section, detail, sourceQuery, tracks, queueEntries)
+    }
+    val projection = remember(section, sourceQuery, directProjection, completedProjection, queueEntries) {
+        when {
+            section == BrowserSection.QUEUES && sourceQuery.isBlank() -> directProjection
+            section == BrowserSection.QUEUES -> completedProjection?.inQueueOrder(queueEntries) ?: directProjection
+            else -> completedProjection ?: directProjection
+        }
+    }
     val currentTracks = projection.tracks
     val currentUnique = currentTracks
     val currentTrackIds = projection.trackIds
