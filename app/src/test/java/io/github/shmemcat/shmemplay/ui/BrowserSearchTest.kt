@@ -63,7 +63,7 @@ class BrowserSearchTest {
     }
 
     @Test fun unfilteredQueueKeepsRowsDuringReorderWithoutWaitingForSearchIndex() {
-        val entries = tracks.map { it.toQueueTrack() } + QueueTrack("missing", "content://missing", "Missing", unavailable = true)
+        val entries = tracks.map { it.toQueueTrack() } + QueueTrack("external_primary:4", "content://missing", "Missing", mediaId = 4, unavailable = true)
         listOf(entries, entries.reversed()).forEach { order ->
             val result = projectionWhileIndexing(BrowserSection.QUEUES, null, "  ", tracks, order)
             assertFalse(result.loading)
