@@ -46,6 +46,10 @@ does not request network access.
 - **Rule-built playlists:** combine nested **Match all**/**Match any** groups
   using playlist membership, artist, genre, and title rules. Save a fixed M3U
   snapshot or a live playlist that reevaluates inside shmemplay.
+- **Multiple genres:** MusicBee multi-value tags and semicolon-separated genres
+  appear individually in Genres and playlist rules. Library scans read embedded
+  ID3 (MP3), FLAC, and Ogg Vorbis/Opus genres directly, with Android metadata as
+  fallback. A song can belong to several genres without duplicating its file.
 - **Song tools:** inspect metadata and embedded MP3 lyrics, share an audio file,
   edit supported MP3 ID3v2.3/v2.4 text tags, or request permanent deletion
   through Android's confirmation flow. Tag writes and deletion require Android

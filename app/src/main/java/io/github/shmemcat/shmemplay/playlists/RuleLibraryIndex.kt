@@ -16,11 +16,12 @@ class RuleLibraryIndex(val tracks: List<LibraryTrack>) {
     private val choices by lazy { RuleField.entries.associateWith { field ->
         val values = linkedMapOf<String, Pair<String, Int>>()
         metadata.values.forEach { track ->
-            val value = track.value(field)
-            if (value.isNotBlank()) {
-                val key = NestedPlaylistRules.normalize(value)
-                val previous = values[key]
-                values[key] = (previous?.first ?: value) to ((previous?.second ?: 0) + 1)
+            track.values(field).distinctBy(NestedPlaylistRules::normalize).forEach { value ->
+                if (value.isNotBlank()) {
+                    val key = NestedPlaylistRules.normalize(value)
+                    val previous = values[key]
+                    values[key] = (previous?.first ?: value) to ((previous?.second ?: 0) + 1)
+                }
             }
         }
         values.values.map { (label, count) -> RuleValueChoice(label, label, count, LibrarySearch.normalize(label)) }

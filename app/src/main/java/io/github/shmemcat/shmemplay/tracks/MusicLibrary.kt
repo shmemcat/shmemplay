@@ -6,6 +6,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import io.github.shmemcat.shmemplay.domain.PhonePathV1
+import io.github.shmemcat.shmemplay.domain.Genres
+import io.github.shmemcat.shmemplay.domain.AudioGenreTags
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -21,6 +23,7 @@ data class LibraryTrack(
     val durationMs: Long,
     val albumId: Long?,
 ) {
+    val genres: List<String> get() = Genres.split(genre)
     val stableId: String = "${identity.volumeName}:${identity.mediaId}"
     val folderRoot: String get() = relativePath
         ?.trim('/')
@@ -101,11 +104,11 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                                 .cleanUnknown("Unknown artist"),
                             album = cursor.string(MediaStore.Audio.AudioColumns.ALBUM)
                                 .cleanUnknown("Unknown album"),
-                            genre = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            genre = readGenres(ContentUris.withAppendedId(collection, id), displayName, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 cursor.string(MediaStore.Audio.AudioColumns.GENRE).cleanUnknown("Unknown genre")
                             } else {
                                 genres[id].orEmpty().cleanUnknown("Unknown genre")
-                            },
+                            }),
                             durationMs = cursor.long(MediaStore.Audio.AudioColumns.DURATION) ?: 0L,
                             albumId = cursor.long(MediaStore.Audio.AudioColumns.ALBUM_ID),
                         ),
@@ -113,6 +116,13 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                 }
             } ?: error("media provider returned no library cursor")
         }
+    }
+
+    private fun readGenres(uri: Uri, name: String, fallback: String): String {
+        val embedded = if (name.substringAfterLast('.').lowercase() in setOf("mp3", "flac", "ogg", "opus", "oga")) {
+            runCatching { resolver.openInputStream(uri)?.buffered()?.use(AudioGenreTags::read) }.getOrNull().orEmpty()
+        } else emptyList()
+        return Genres.join(embedded.ifEmpty { Genres.split(fallback) }).ifEmpty { "Unknown genre" }
     }
 
     private fun queryGenres(volume: String): Map<Long, String> = runCatching {
@@ -152,7 +162,7 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                 }
             }
         }
-        result.mapValues { (_, names) -> names.distinct().joinToString(" · ") }
+        result.mapValues { (_, names) -> Genres.join(names) }
     }.getOrDefault(emptyMap())
 
     private fun projection(): Array<String> = buildList {

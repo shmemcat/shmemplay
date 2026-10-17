@@ -4,6 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MetadataPlaylistRulesTest {
+    @Test fun everyGenreMatchesIndividuallyAndExclusionRequiresNoMatch() {
+        val data = mapOf("multi" to RuleTrackMetadata("Song", "Artist", "Rock; Dream pop\u0000Shoegaze"),
+            "pop" to RuleTrackMetadata("Other", "Artist", "Pop"), "missing" to RuleTrackMetadata("Missing", "Artist", "; ;"))
+        fun matches(operator: RuleOperator, vararg values: String): Set<String> =
+            (NestedPlaylistRules.evaluate(data.keys, emptyMap(), PlaylistRuleNode.Metadata(RuleField.GENRE, operator, values.toList()), data) as RecipeEvaluation.Success).trackIdentities
+        assertEquals(setOf("multi"), matches(RuleOperator.IS, "Dream pop"))
+        assertEquals(setOf("multi"), matches(RuleOperator.IS, "shoegaze"))
+        assertEquals(setOf("multi", "pop"), matches(RuleOperator.IS_ANY_OF, "Shoegaze", "Pop"))
+        assertEquals(setOf("pop", "missing"), matches(RuleOperator.IS_NOT, "Rock"))
+        assertEquals(setOf("multi"), matches(RuleOperator.STARTS_WITH, "Dream"))
+        assertEquals(setOf("multi"), matches(RuleOperator.CONTAINS, "gaze"))
+        assertEquals(emptySet<String>(), matches(RuleOperator.CONTAINS, "pop shoe"))
+        assertEquals(setOf("missing"), matches(RuleOperator.HAS_NO_VALUE))
+    }
     private val metadata = linkedMapOf(
         "a" to RuleTrackMetadata("Bloom", "Mira Vale", "Dream pop"),
         "b" to RuleTrackMetadata("Bloom", "Mira Vale", "Dream pop"),

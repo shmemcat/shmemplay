@@ -7,6 +7,7 @@ enum class RuleField { ARTIST, GENRE, TITLE }
 enum class RuleOperator { IS, IS_NOT, IS_ANY_OF, CONTAINS, STARTS_WITH, HAS_NO_VALUE }
 
 data class RuleTrackMetadata(val title: String, val artist: String, val genre: String) {
+    fun values(field: RuleField): List<String> = if (field == RuleField.GENRE) Genres.split(genre) else listOf(value(field)).filter(String::isNotBlank)
     fun value(field: RuleField): String = when (field) {
         RuleField.ARTIST -> artist
         RuleField.GENRE -> genre
@@ -62,7 +63,7 @@ object NestedPlaylistRules {
         val unknown = sources(node).filterNot(memberships::containsKey).toSet()
         if (unknown.isNotEmpty()) return RecipeEvaluation.UnknownSources(unknown)
         require(fields.isEmpty() || universe.all(metadata::containsKey)) { "Song metadata is unavailable. Refresh the library." }
-        val normalized = fields.associateWith { field -> metadata.mapValues { normalize(it.value.value(field)) } }
+        val normalized = fields.associateWith { field -> metadata.mapValues { it.value.values(field).map(::normalize) } }
         fun compile(n: PlaylistRuleNode): (String) -> Boolean = when (n) {
             is PlaylistRuleNode.Membership -> { id -> (id in memberships.getValue(n.source)) == n.present }
             is PlaylistRuleNode.Metadata -> {
@@ -72,10 +73,10 @@ object NestedPlaylistRules {
                 val test: (String) -> Boolean = { id ->
                     val value = byId.getValue(id)
                     when (n.operator) {
-                        RuleOperator.IS, RuleOperator.IS_ANY_OF -> value in values
-                        RuleOperator.IS_NOT -> value !in values
-                        RuleOperator.CONTAINS -> value.contains(first)
-                        RuleOperator.STARTS_WITH -> value.startsWith(first)
+                        RuleOperator.IS, RuleOperator.IS_ANY_OF -> value.any { it in values }
+                        RuleOperator.IS_NOT -> value.none { it in values }
+                        RuleOperator.CONTAINS -> value.any { it.contains(first) }
+                        RuleOperator.STARTS_WITH -> value.any { it.startsWith(first) }
                         RuleOperator.HAS_NO_VALUE -> value.isEmpty()
                     }
                 }

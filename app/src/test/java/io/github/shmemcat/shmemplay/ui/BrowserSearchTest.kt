@@ -18,6 +18,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class BrowserSearchTest {
+    @Test fun eachGenreHasItsOwnGroupAndDetailWithoutDuplicatingSongResults() {
+        val multi = track(4, "Layers").copy(genre = "Rock; Dream pop\u0000Shoegaze; ROCK")
+        val missing = track(5, "Missing").copy(genre = " ; ")
+        val library = BrowserLibraryIndex.indexed(listOf(multi, missing))
+        val request = BrowserSearchRequest(library, null, null, BrowserSection.GENRES, null, "", "All")
+        val root = searchBrowser(request)
+        assertEquals(listOf("Dream pop", "Rock", "Shoegaze", "Unknown genre"), root.groups.map { it.first })
+        assertEquals(listOf(multi, missing), root.tracks)
+        root.groups.take(3).forEach { (name, songs) ->
+            assertEquals(listOf(multi), songs)
+            assertEquals(songs, searchBrowser(request.copy(detail = BrowserDetail(DetailKind.GENRE, name))).tracks)
+        }
+        assertEquals(listOf(multi), searchBrowser(request.copy(query = "Shoegaze")).tracks)
+    }
     private fun track(id: Long, title: String, album: String = "Album", artist: String = "Artist") = LibraryTrack(
         MediaStoreIdentity("external_primary", id), Uri.parse("content://media/$id"), "$id.mp3", "Music/", title,
         artist, album, "Rock", 60000, null,

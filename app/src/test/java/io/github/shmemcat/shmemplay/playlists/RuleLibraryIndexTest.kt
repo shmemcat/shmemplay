@@ -13,6 +13,11 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 @org.robolectric.annotation.Config(sdk = [28])
 class RuleLibraryIndexTest {
+    @Test fun genresAreIndividualChoicesAndCountEachSongOnlyOnce() {
+        val index = RuleLibraryIndex(listOf(track(1, genre = "Rock; Dream pop; ROCK"), track(2, genre = "Dream pop\u0000Shoegaze")))
+        assertEquals(listOf("Dream pop" to 2, "Rock" to 1, "Shoegaze" to 1), index.choices(RuleField.GENRE).map { it.label to it.songCount })
+        assertEquals(RecipeEvaluation.Success(setOf("external_primary:2")), index.evaluate(PlaylistRuleNode.Metadata(RuleField.GENRE, RuleOperator.IS, listOf("Shoegaze")), emptyList(), false))
+    }
     private fun track(id: Long, title: String = "Song $id", artist: String = "Artist", genre: String = "Pop") =
         LibraryTrack(MediaStoreIdentity("external_primary", id), Uri.parse("content://fixture/$id"), "$id.mp3", "Music/", title, artist, "Album", genre, 60000, null)
 

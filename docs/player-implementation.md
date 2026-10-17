@@ -34,6 +34,13 @@ The source map now includes:
 
 ## Explicit implementation defaults and limits
 
+### Multiple genres (October 17)
+
+- Library scans read all embedded genre values from MP3 ID3v2.2/2.3/2.4, FLAC Vorbis comments, and Ogg Vorbis/Opus headers. Repeated genre frames/comments, null-separated values, semicolons, and Mp3tag's double-backslash separator produce individual genres. Commas and single slashes remain part of genre names. Other formats and unreadable/unsupported tags retain Android's supplied metadata.
+- Each song appears in every applicable genre group and rule-value choice, once per genre. Exact, contains, and starts-with rules match individual genres; is-not requires that none match. Missing genres retain the Unknown genre group and has-no-value behavior. Song info links each genre to its own group.
+- Cache schema 2 forces a one-time library rebuild on upgrade to recover previously omitted genres. The scan reads file headers on the IO dispatcher; cached startup and search do not reopen music files. Audio files, playlist files, and queue persistence formats are unchanged.
+- The complete build/lint/JVM gate passes (161 tests). Regressions cover multi-value decoding, Unicode, legacy numeric genres, extended/unsynchronised ID3 tags, FLAC/Ogg comments, malformed metadata fallback, genre browsing/details, rule choices/counts/operators, and old-cache invalidation. A read-only probe of actual PC music files recovered multiple genres from five tracks without parser errors.
+
 These defaults are provisional implementation choices, not additional confirmed user decisions:
 
 - Rewind/forward are ten-second taps. Raw multi-press grouping waits 400 ms after the last click. Four or more clicks seek forward ten seconds. Devices that translate buttons to Next/Previous use those commands directly.

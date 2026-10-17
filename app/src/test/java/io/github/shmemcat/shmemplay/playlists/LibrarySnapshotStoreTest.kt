@@ -26,6 +26,16 @@ import java.nio.file.Files
 @Config(sdk = [28])
 @LooperMode(LooperMode.Mode.PAUSED)
 class LibrarySnapshotStoreTest {
+    @Test fun preMultiGenreCachesAreRebuilt() {
+        val directory = Files.createTempDirectory("library-old-genres").toFile()
+        val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
+        try {
+            java.io.DataOutputStream(File(directory, "library-snapshot-v1.bin").outputStream()).use {
+                it.writeInt(0x53484C31); it.writeInt(1); it.writeInt(0)
+            }
+            assertNull(LibrarySnapshotStore(context).load())
+        } finally { directory.deleteRecursively() }
+    }
     private fun track(id: Long = 1) = LibraryTrack(MediaStoreIdentity("external", id), Uri.parse("content://media/external/audio/media/$id"),
         "Café $id.mp3", "Music/Artist/", "Café $id", "Artist", "Album", "Rock", 123456, 42)
 
