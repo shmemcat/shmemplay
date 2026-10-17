@@ -7,6 +7,22 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class GenresTest {
+    @Test fun largeArtworkIsSkippedWhileGenresAfterItAreStillRead() {
+        val picture = ByteArray(2 * 1024 * 1024) { 1 }
+        for (version in listOf(3, 4)) {
+            val art = "APIC".toByteArray() + (if (version == 4) sync(picture.size) else int(picture.size)) + byteArrayOf(0, 0) + picture
+            var bytesRead = 0
+            var bytesSkipped = 0L
+            val input = object : java.io.ByteArrayInputStream(tag(version, art + frame(version, "Rock\u0000Dream pop"))) {
+                override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) bytesRead += it }
+                override fun read(): Int = super.read().also { if (it >= 0) bytesRead++ }
+                override fun skip(n: Long): Long = super.skip(n).also { bytesSkipped += it }
+            }
+            assertEquals(listOf("Rock", "Dream pop"), AudioGenreTags.read(input))
+            assertEquals(picture.size.toLong(), bytesSkipped)
+            assertTrue("Artwork must not be read", bytesRead < 100)
+        }
+    }
     @Test fun separatorsDeduplicateWithoutSplittingGenrePunctuation() {
         assertEquals(listOf("Rock", "Dream pop", "Pop/Funk", "Rock, experimental"),
             Genres.split(" Rock ; Dream pop\u0000\ufeffrock\\\\Pop/Funk; ;Rock, experimental;Unknown genre"))

@@ -41,31 +41,45 @@ object AudioGenreTags {
         require(revision == 0 && (version != 2 || flags and 0x40 == 0))
         val size = sync(ByteArray(4).also(data::readFully), 0)
         require(size <= MAX_TAG)
-        var body = ByteArray(size).also(data::readFully)
-        // v2.4 unsynchronisation applies to frame payloads, leaving frame sizes unchanged.
-        if (version < 4 && flags and 0x80 != 0) body = unsync(body)
-        var offset = if (version >= 3 && flags and 0x40 != 0) {
-            require(body.size >= 4)
-            if (version == 4) sync(body, 0) else number(body, 0, 4) + 4
-        } else 0
-        require(offset in 0..body.size)
+        // Only old tag-wide unsynchronisation needs a decoded copy. For ordinary tags,
+        // seek past artwork instead of reading megabytes of it for every library song.
+        if (version < 4 && flags and 0x80 != 0) {
+            val body = unsync(ByteArray(size).also(data::readFully))
+            return id3Frames(DataInputStream(body.inputStream()), version, flags, body.size)
+        }
+        return id3Frames(data, version, flags, size)
+    }
+
+    private fun id3Frames(data: DataInputStream, version: Int, flags: Int, size: Int): List<String> {
+        var remaining = size
+        if (version >= 3 && flags and 0x40 != 0) {
+            require(remaining >= 4)
+            val encoded = ByteArray(4).also(data::readFully)
+            val extended = if (version == 4) sync(encoded, 0) - 4 else number(encoded, 0, 4)
+            require(extended in 0..(remaining - 4))
+            skipFully(data, extended)
+            remaining -= 4 + extended
+        }
         val values = mutableListOf<String>()
-        val header = if (version == 2) 6 else 10
-        while (offset + header <= body.size && body[offset] != 0.toByte()) {
-            val id = String(body, offset, if (version == 2) 3 else 4, Charsets.US_ASCII)
+        val header = ByteArray(if (version == 2) 6 else 10)
+        while (remaining >= header.size) {
+            data.readFully(header)
+            remaining -= header.size
+            if (header[0] == 0.toByte()) break
+            val id = String(header, 0, if (version == 2) 3 else 4, Charsets.US_ASCII)
             if (version == 4 && id.startsWith("3DI")) break // Optional tag footer.
             require(id.matches(Regex("[A-Z0-9]{3,4}")))
             val length = when (version) {
-                2 -> number(body, offset + 3, 3)
-                3 -> number(body, offset + 4, 4)
-                else -> sync(body, offset + 4)
+                2 -> number(header, 3, 3)
+                3 -> number(header, 4, 4)
+                else -> sync(header, 4)
             }
-            require(length > 0 && length <= body.size - offset - header)
+            require(length > 0 && length <= remaining)
             if (id == "TCON" || id == "TCO") {
-                val format = if (version == 2) 0 else body[offset + 9].toInt() and 255
+                val format = if (version == 2) 0 else header[9].toInt() and 255
                 val unsupported = if (version == 3) format and 0xc0 else format and 0x0c
                 if (unsupported == 0) {
-                    var payload = body.copyOfRange(offset + header, offset + header + length)
+                    var payload = ByteArray(length).also(data::readFully)
                     if (version == 4 && (flags and 0x80 != 0 || format and 2 != 0)) payload = unsync(payload)
                     var start = if ((version == 3 && format and 0x20 != 0) || (version == 4 && format and 0x40 != 0)) 1 else 0
                     if (version == 4 && format and 1 != 0) start += 4
@@ -80,9 +94,9 @@ object AudioGenreTags {
                         val text = String(payload, start + 1, payload.size - start - 1, encoding)
                         Genres.split(text).forEach { value -> values += id3Genres(value) }
                     }
-                }
-            }
-            offset += header + length
+                } else skipFully(data, length)
+            } else skipFully(data, length)
+            remaining -= length
         }
         return Genres.split(values.joinToString(";"))
     }
