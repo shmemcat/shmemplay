@@ -29,7 +29,10 @@ class MusicLibraryGenresTest {
                 if (uri.path!!.endsWith("/genres")) return MatrixCursor(arrayOf("_id", "name")).apply { addRow(arrayOf<Any>(1L, "Rock")) }
                 if (uri.path!!.contains("/genres/")) return MatrixCursor(arrayOf("audio_id")).apply { (1L..3).forEach { addRow(arrayOf(it)) } }
                 return MatrixCursor(arrayOf("_id", "_display_name", "_data", "title", "artist", "album", "duration", "album_id")).apply {
-                    (1L..3).forEach { addRow(arrayOf<Any>(it, "$it.mp3", "/storage/emulated/0/Music/$it.mp3", "Song $it", "Artist", "Album", 60000L, 1L)) }
+                    (1L..3).forEach {
+                        val artist = when (it) { 1L -> "Only first"; 2L -> "Main ft. Guest"; else -> "Tyler, the Creator" }
+                        addRow(arrayOf<Any>(it, "$it.mp3", "/storage/emulated/0/Music/$it.mp3", "Song $it", artist, "Album", 60000L, 1L))
+                    }
                 }
             }
             override fun getType(uri: Uri): String? = null
@@ -41,7 +44,9 @@ class MusicLibraryGenresTest {
         val payload = byteArrayOf(3) + "Rock\u0000Dream pop; Shoegaze".toByteArray()
         fun sync(size: Int) = ByteArray(4) { (size ushr ((3 - it) * 7) and 127).toByte() }
         val frame = "TCON".toByteArray() + sync(payload.size) + byteArrayOf(0, 0) + payload
-        val tag = "ID3".toByteArray() + byteArrayOf(4, 0, 0) + sync(frame.size) + frame
+        val artistPayload = byteArrayOf(3) + "Tyler, the Creator\u0000Guest".toByteArray()
+        val artistFrame = "TPE1".toByteArray() + sync(artistPayload.size) + byteArrayOf(0, 0) + artistPayload
+        val tag = "ID3".toByteArray() + byteArrayOf(4, 0, 0) + sync(frame.size + artistFrame.size) + frame + artistFrame
         shadowOf(app.contentResolver).registerInputStream(ContentUris.withAppendedId(collection, 1), tag.inputStream())
         shadowOf(app.contentResolver).registerInputStream(ContentUris.withAppendedId(collection, 2), byteArrayOf(1, 2).inputStream())
         // File 3 has no readable stream; it must not discard the rest of the library.
@@ -49,5 +54,8 @@ class MusicLibraryGenresTest {
         assertEquals(listOf("Rock", "Dream pop", "Shoegaze"), tracks[0].genres)
         assertEquals(listOf("Rock"), tracks[1].genres)
         assertEquals(listOf("Rock"), tracks[2].genres)
+        assertEquals(listOf("Tyler, the Creator", "Guest"), tracks[0].artists)
+        assertEquals(listOf("Main", "Guest"), tracks[1].artists)
+        assertEquals(listOf("Tyler, the Creator"), tracks[2].artists)
     }
 }

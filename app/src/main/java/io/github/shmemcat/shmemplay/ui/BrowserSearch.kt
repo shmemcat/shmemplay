@@ -86,7 +86,11 @@ internal class BrowserLibraryIndex private constructor(
                 val grouped = linkedMapOf<String, MutableList<LibraryTrack>>()
                 tracks.forEachIndexed { index, track ->
                     if (index % 256 == 0) checkCancelled()
-                    val names = if (kind == DetailKind.GENRE) track.genres.ifEmpty { listOf("Unknown genre") } else listOf(groupValue(track, kind))
+                    val names = when (kind) {
+                        DetailKind.GENRE -> track.genres.ifEmpty { listOf("Unknown genre") }
+                        DetailKind.ARTIST -> track.artists.ifEmpty { listOf("Unknown artist") }
+                        else -> listOf(groupValue(track, kind))
+                    }
                     names.forEach { name -> grouped.getOrPut(name, ::mutableListOf).add(track) }
                 }
                 grouped.toList()

@@ -41,6 +41,14 @@ The source map now includes:
 - Cache schema 2 forces a one-time library rebuild on upgrade to recover previously omitted genres. The scan reads file headers on the IO dispatcher and skips unrelated ID3 frames (including artwork) without reading their payloads. Old tag-wide unsynchronisation requires a bounded decoded copy. Cached startup and search do not reopen music files. Audio files, playlist files, and queue persistence formats are unchanged.
 - The complete build/lint/JVM gate passes (162 tests). Regressions cover multi-value decoding, Unicode, legacy numeric genres, extended/unsynchronised ID3 tags, FLAC/Ogg comments, malformed metadata fallback, genre browsing/details, rule choices/counts/operators, and old-cache invalidation. A large-artwork regression verifies that only frame headers and genre payloads are read, including genres after artwork. A read-only probe of actual PC music files recovered multiple genres from five tracks without parser errors.
 
+### Multiple artists (October 17)
+
+- The same bounded file-header pass now reads MP3 TPE1/TP1 and repeated FLAC/Ogg ARTIST comments alongside genres. Album artist and song titles are not parsed for artist membership. Separate saved values, semicolons, nulls, and double backslashes identify individual artists; artist-field feat./ft./featuring credits and spaced slashes also split. Commas, ampersands, and unspaced slashes remain literal, including Tyler, the Creator, Earth, Wind & Fire, and AC/DC. Comma-only collaboration strings remain combined by design.
+- Artists browsing, song-info links, rule choices/counts, and rule evaluation use the individual names, with no duplicate song membership inside a group. Negative rules require that none of the artists match. Missing artist behavior is preserved.
+- Cache schema 3 rebuilds older snapshots automatically. The app opens each supported audio file once per scan for both artists and genres, skips artwork, and never rewrites music tags. All 170 JVM tests, lint, and Android builds pass. Artist regressions cover comma preservation, featured credits, spaced slashes, native values, browsing/details, rules, and Android metadata fallback.
+
+### Playback and editing defaults
+
 These defaults are provisional implementation choices, not additional confirmed user decisions:
 
 - Rewind/forward are ten-second taps. Raw multi-press grouping waits 400 ms after the last click. Four or more clicks seek forward ten seconds. Devices that translate buttons to Next/Previous use those commands directly.

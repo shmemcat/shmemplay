@@ -98,11 +98,11 @@ import io.github.shmemcat.shmemplay.tracks.LibraryTrack
                 "Title" to track.title, "Artist" to track.artist, "Album" to track.album, "Genre" to track.genre,
                 "Duration" to playerTime(track.durationMs)).forEach { (label, value) ->
                 Column { Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary);
-                    if (label == "Genre" && navigation != null) {
-                        track.genres.ifEmpty { listOf("Unknown genre") }.forEach { genre ->
-                            MenuAction(genre) { navigation.navigate(label, genre); onDismiss() }
+                    if (label in listOf("Genre", "Artist") && navigation != null) {
+                        (if (label == "Genre") track.genres.ifEmpty { listOf("Unknown genre") } else track.artists.ifEmpty { listOf("Unknown artist") }).forEach { name ->
+                            MenuAction(name) { navigation.navigate(label, name); onDismiss() }
                         }
-                    } else if (label in listOf("Album","Artist") && navigation != null) MenuAction(value) { navigation.navigate(label,value);onDismiss() } else Text(value.ifBlank { "Not available" }) }
+                    } else if (label == "Album" && navigation != null) MenuAction(value) { navigation.navigate(label,value);onDismiss() } else Text(value.ifBlank { "Not available" }) }
             }
             listOf("Album artist","Composer","Lyricist","Track number","Disc number","Year","Embedded lyrics").forEach { label ->
                 Column { Text(label,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary);Text(metadata[label]?.takeIf { it.isNotBlank() } ?: "Not available") }

@@ -30,10 +30,12 @@ class LibrarySnapshotStoreTest {
         val directory = Files.createTempDirectory("library-old-genres").toFile()
         val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
         try {
-            java.io.DataOutputStream(File(directory, "library-snapshot-v1.bin").outputStream()).use {
-                it.writeInt(0x53484C31); it.writeInt(1); it.writeInt(0)
+            for (version in listOf(1, 2)) {
+                java.io.DataOutputStream(File(directory, "library-snapshot-v1.bin").outputStream()).use {
+                    it.writeInt(0x53484C31); it.writeInt(version); it.writeInt(0)
+                }
+                assertNull(LibrarySnapshotStore(context).load())
             }
-            assertNull(LibrarySnapshotStore(context).load())
         } finally { directory.deleteRecursively() }
     }
     private fun track(id: Long = 1) = LibraryTrack(MediaStoreIdentity("external", id), Uri.parse("content://media/external/audio/media/$id"),

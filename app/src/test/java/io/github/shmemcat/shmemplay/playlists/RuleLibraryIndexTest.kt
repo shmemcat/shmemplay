@@ -13,6 +13,12 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 @org.robolectric.annotation.Config(sdk = [28])
 class RuleLibraryIndexTest {
+    @Test fun artistsAreIndividualChoicesAndCommaNamesRemainWhole() {
+        val index = RuleLibraryIndex(listOf(track(1, artist = "Tyler, the Creator; Guest; GUEST"), track(2, artist = "Guest"), track(3, artist = "Unknown artist")))
+        assertEquals(listOf("Guest" to 2, "Tyler, the Creator" to 1), index.choices(RuleField.ARTIST).map { it.label to it.songCount })
+        assertEquals(RecipeEvaluation.Success(setOf("external_primary:1", "external_primary:2")), index.evaluate(PlaylistRuleNode.Metadata(RuleField.ARTIST, RuleOperator.IS, listOf("Guest")), emptyList(), false))
+        assertEquals(RecipeEvaluation.Success(setOf("external_primary:3")), index.evaluate(PlaylistRuleNode.Metadata(RuleField.ARTIST, RuleOperator.HAS_NO_VALUE), emptyList(), false))
+    }
     @Test fun genresAreIndividualChoicesAndCountEachSongOnlyOnce() {
         val index = RuleLibraryIndex(listOf(track(1, genre = "Rock; Dream pop; ROCK"), track(2, genre = "Dream pop\u0000Shoegaze")))
         assertEquals(listOf("Dream pop" to 2, "Rock" to 1, "Shoegaze" to 1), index.choices(RuleField.GENRE).map { it.label to it.songCount })

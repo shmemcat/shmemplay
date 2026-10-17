@@ -7,7 +7,11 @@ enum class RuleField { ARTIST, GENRE, TITLE }
 enum class RuleOperator { IS, IS_NOT, IS_ANY_OF, CONTAINS, STARTS_WITH, HAS_NO_VALUE }
 
 data class RuleTrackMetadata(val title: String, val artist: String, val genre: String) {
-    fun values(field: RuleField): List<String> = if (field == RuleField.GENRE) Genres.split(genre) else listOf(value(field)).filter(String::isNotBlank)
+    fun values(field: RuleField): List<String> = when (field) {
+        RuleField.GENRE -> Genres.split(genre)
+        RuleField.ARTIST -> Artists.split(artist)
+        RuleField.TITLE -> listOf(title).filter(String::isNotBlank)
+    }
     fun value(field: RuleField): String = when (field) {
         RuleField.ARTIST -> artist
         RuleField.GENRE -> genre

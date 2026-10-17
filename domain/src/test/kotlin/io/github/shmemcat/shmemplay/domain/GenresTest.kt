@@ -62,9 +62,10 @@ class GenresTest {
     }
 
     @Test fun flacRepeatedGenreCommentsAreReadWithoutReadingAudio() {
-        val comments = comments("GENRE=Rock", "GENRE=Dream pop;Shoegaze", "genre=Rock", "ARTIST=Artist")
+        val comments = comments("GENRE=Rock", "GENRE=Dream pop;Shoegaze", "genre=Rock", "ARTIST=Tyler, the Creator", "ARTIST=Guest", "ALBUMARTIST=Album Artist")
         val bytes = "fLaC".toByteArray() + byteArrayOf(0x84.toByte(), 0, (comments.size shr 8).toByte(), comments.size.toByte()) + comments
         assertEquals(listOf("Rock", "Dream pop", "Shoegaze"), AudioGenreTags.read(bytes.inputStream()))
+        assertEquals(listOf("Tyler, the Creator", "Guest"), AudioTextTags.read(bytes.inputStream()).artists)
     }
 
     @Test fun vorbisAndOpusRepeatedCommentsAreReadFromHeaderPackets() {
@@ -72,8 +73,9 @@ class GenresTest {
             byteArrayOf(1) + "vorbis".toByteArray() to byteArrayOf(3) + "vorbis".toByteArray(),
             "OpusHead".toByteArray() to "OpusTags".toByteArray(),
         )) {
-            val bytes = page(head) + page(comment + comments("GENRE=Rock", "GENRE=Dream pop"))
+            val bytes = page(head) + page(comment + comments("GENRE=Rock", "GENRE=Dream pop", "ARTIST=Tyler, the Creator", "ARTIST=Guest"))
             assertEquals(listOf("Rock", "Dream pop"), AudioGenreTags.read(bytes.inputStream()))
+            assertEquals(listOf("Tyler, the Creator", "Guest"), AudioTextTags.read(bytes.inputStream()).artists)
         }
     }
 

@@ -18,6 +18,21 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class BrowserSearchTest {
+    @Test fun eachArtistHasItsOwnGroupAndDetailsWhileCommaNamesStayWhole() {
+        val multi = track(4, "Duet", artist = "Tyler, the Creator; Guest; GUEST")
+        val solo = track(5, "Solo", artist = "Guest")
+        val unknown = track(6, "Missing", artist = "Unknown artist")
+        val library = BrowserLibraryIndex.indexed(listOf(multi, solo, unknown))
+        val request = BrowserSearchRequest(library, null, null, BrowserSection.ARTISTS, null, "", "All")
+        val root = searchBrowser(request)
+        assertEquals(listOf("Guest", "Tyler, the Creator", "Unknown artist"), root.groups.map { it.first })
+        assertEquals(listOf(multi, solo), root.groups.first().second)
+        root.groups.forEach { (name, songs) ->
+            assertEquals(songs, searchBrowser(request.copy(detail = BrowserDetail(DetailKind.ARTIST, name))).tracks)
+        }
+        assertEquals(listOf(multi), searchBrowser(request.copy(query = "Tyler")).tracks)
+        assertEquals(3, root.tracks.size)
+    }
     @Test fun eachGenreHasItsOwnGroupAndDetailWithoutDuplicatingSongResults() {
         val multi = track(4, "Layers").copy(genre = "Rock; Dream pop\u0000Shoegaze; ROCK")
         val missing = track(5, "Missing").copy(genre = " ; ")

@@ -7,7 +7,8 @@ import android.os.Build
 import android.provider.MediaStore
 import io.github.shmemcat.shmemplay.domain.PhonePathV1
 import io.github.shmemcat.shmemplay.domain.Genres
-import io.github.shmemcat.shmemplay.domain.AudioGenreTags
+import io.github.shmemcat.shmemplay.domain.AudioTextTags
+import io.github.shmemcat.shmemplay.domain.Artists
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -24,6 +25,7 @@ data class LibraryTrack(
     val albumId: Long?,
 ) {
     val genres: List<String> get() = Genres.split(genre)
+    val artists: List<String> get() = Artists.split(artist)
     val stableId: String = "${identity.volumeName}:${identity.mediaId}"
     val folderRoot: String get() = relativePath
         ?.trim('/')
@@ -92,6 +94,13 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                             ?.let { if (it.isEmpty()) null else "$it/" }
                     }
                     val displayName = cursor.string(MediaStore.MediaColumns.DISPLAY_NAME).orEmpty()
+                    val embedded = readTags(ContentUris.withAppendedId(collection, id), displayName)
+                    val artist = Artists.join(Artists.credits(embedded.artists.ifEmpty {
+                        Artists.split(cursor.string(MediaStore.Audio.AudioColumns.ARTIST).orEmpty())
+                    })).ifEmpty { "Unknown artist" }
+                    val genre = Genres.join(embedded.genres.ifEmpty {
+                        Genres.split(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) cursor.string(MediaStore.Audio.AudioColumns.GENRE).orEmpty() else genres[id].orEmpty())
+                    }).ifEmpty { "Unknown genre" }
                     add(
                         LibraryTrack(
                             identity = MediaStoreIdentity(volume, id),
@@ -100,15 +109,10 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                             relativePath = relativePath,
                             title = cursor.string(MediaStore.Audio.AudioColumns.TITLE)
                                 .cleanUnknown("Unknown title", displayName.substringBeforeLast('.')),
-                            artist = cursor.string(MediaStore.Audio.AudioColumns.ARTIST)
-                                .cleanUnknown("Unknown artist"),
+                            artist = artist,
                             album = cursor.string(MediaStore.Audio.AudioColumns.ALBUM)
                                 .cleanUnknown("Unknown album"),
-                            genre = readGenres(ContentUris.withAppendedId(collection, id), displayName, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                cursor.string(MediaStore.Audio.AudioColumns.GENRE).cleanUnknown("Unknown genre")
-                            } else {
-                                genres[id].orEmpty().cleanUnknown("Unknown genre")
-                            }),
+                            genre = genre,
                             durationMs = cursor.long(MediaStore.Audio.AudioColumns.DURATION) ?: 0L,
                             albumId = cursor.long(MediaStore.Audio.AudioColumns.ALBUM_ID),
                         ),
@@ -118,11 +122,10 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
         }
     }
 
-    private fun readGenres(uri: Uri, name: String, fallback: String): String {
-        val embedded = if (name.substringAfterLast('.').lowercase() in setOf("mp3", "flac", "ogg", "opus", "oga")) {
-            runCatching { resolver.openInputStream(uri)?.buffered()?.use(AudioGenreTags::read) }.getOrNull().orEmpty()
-        } else emptyList()
-        return Genres.join(embedded.ifEmpty { Genres.split(fallback) }).ifEmpty { "Unknown genre" }
+    private fun readTags(uri: Uri, name: String): AudioTextTags.Values {
+        return if (name.substringAfterLast('.').lowercase() in setOf("mp3", "flac", "ogg", "opus", "oga")) {
+            runCatching { resolver.openInputStream(uri)?.buffered()?.use(AudioTextTags::read) }.getOrNull() ?: AudioTextTags.Values()
+        } else AudioTextTags.Values()
     }
 
     private fun queryGenres(volume: String): Map<Long, String> = runCatching {

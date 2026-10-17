@@ -29,7 +29,7 @@ internal class LibrarySnapshotStore(context: Context) {
         runCatching {
             file.openRead().use { stream ->
                 val input = DataInputStream(stream.buffered(64 * 1024))
-                require(input.readInt() == 0x53484C31 && input.readInt() == 2)
+                require(input.readInt() == 0x53484C31 && input.readInt() == 3)
                 val tracks = List(input.count(1_000_000)) {
                     LibraryTrack(
                         MediaStoreIdentity(input.readUTF(), input.readLong()), Uri.parse(input.readUTF()),
@@ -50,7 +50,7 @@ internal class LibrarySnapshotStore(context: Context) {
         val stream = file.startWrite()
         try {
             val out = DataOutputStream(stream.buffered(64 * 1024))
-            out.writeInt(0x53484C31); out.writeInt(2)
+            out.writeInt(0x53484C31); out.writeInt(3)
             out.writeInt(snapshot.tracks.size)
             snapshot.tracks.forEach { t ->
                 out.writeUTF(t.identity.volumeName); out.writeLong(t.identity.mediaId); out.writeUTF(t.contentUri.toString())

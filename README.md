@@ -50,6 +50,10 @@ does not request network access.
   appear individually in Genres and playlist rules. Library scans read embedded
   ID3 (MP3), FLAC, and Ogg Vorbis/Opus genres directly, with Android metadata as
   fallback. A song can belong to several genres without duplicating its file.
+- **Multiple artists:** separate saved artist values, semicolon lists,
+  `feat.`/`ft.`/`featuring` credits, and spaced slashes (`Artist / Guest`) appear
+  individually in Artists and playlist rules. Commas, ampersands, and unspaced
+  slashes stay intact, preserving names such as Tyler, the Creator and AC/DC.
 - **Song tools:** inspect metadata and embedded MP3 lyrics, share an audio file,
   edit supported MP3 ID3v2.3/v2.4 text tags, or request permanent deletion
   through Android's confirmation flow. Tag writes and deletion require Android

@@ -21,20 +21,57 @@ object Genres {
  * Android's MediaStore can omit all but the first value. Unsupported/bad tags fall back to it.
  */
 object AudioGenreTags {
+    fun read(input: InputStream): List<String> = AudioTextTags.read(input).genres
+}
+
+object Artists {
+    fun split(value: String): List<String> =
+        value.replace("\\\\", ";")
+            .split(';', '\u0000')
+            .map { it.trim { ch -> ch.isWhitespace() || ch == '\ufeff' } }
+            .filter { it.isNotEmpty() && it != "<unknown>" && it != "Unknown artist" }
+            .distinctBy { it.lowercase(Locale.ROOT) }
+
+    fun join(values: Iterable<String>): String = split(values.joinToString(";")).joinToString("; ")
+
+    /** Commas, ampersands and unspaced slashes belong to names; only explicit credits split. */
+    fun credits(values: List<String>): List<String> = split(values.joinToString(";")).flatMap(::splitCredit)
+        .distinctBy { it.lowercase(Locale.ROOT) }
+
+    private fun splitCredit(text: String): List<String> {
+        val names = mutableListOf<String>()
+        var start = 0
+        var closing: Char? = null
+        featured.findAll(text).forEach { match ->
+            names += text.substring(start, match.range.first).trim().let { if (closing != null && it.endsWith(closing!!)) it.dropLast(1) else it }
+            closing = when { '(' in match.value -> ')'; '[' in match.value -> ']'; else -> null }
+            start = match.range.last + 1
+        }
+        names += text.substring(start).trim().let { if (closing != null && it.endsWith(closing!!)) it.dropLast(1) else it }
+        return names.flatMap { split(it.replace(spacedSlash, ";")) }
+    }
+
+    private val featured = Regex("\\s+(?:[\\[(]\\s*)?(?:feat(?:uring)?\\.?|ft\\.?)\\s+", RegexOption.IGNORE_CASE)
+    private val spacedSlash = Regex("\\s+/\\s+")
+}
+
+/** Artists and genres are read together so a library scan opens each audio file only once. */
+object AudioTextTags {
+    data class Values(val artists: List<String> = emptyList(), val genres: List<String> = emptyList())
     private const val MAX_TAG = 16 * 1024 * 1024
 
-    fun read(input: InputStream): List<String> {
+    fun read(input: InputStream): Values {
         val data = DataInputStream(input)
         val signature = ByteArray(4).also(data::readFully)
         return when {
             String(signature, 0, 3, Charsets.US_ASCII) == "ID3" -> id3(data, signature[3].toInt())
             String(signature, Charsets.US_ASCII) == "fLaC" -> flac(data)
             String(signature, Charsets.US_ASCII) == "OggS" -> ogg(data)
-            else -> emptyList()
+            else -> Values()
         }
     }
 
-    private fun id3(data: DataInputStream, version: Int): List<String> {
+    private fun id3(data: DataInputStream, version: Int): Values {
         require(version in 2..4)
         val revision = data.readUnsignedByte()
         val flags = data.readUnsignedByte()
@@ -50,7 +87,7 @@ object AudioGenreTags {
         return id3Frames(data, version, flags, size)
     }
 
-    private fun id3Frames(data: DataInputStream, version: Int, flags: Int, size: Int): List<String> {
+    private fun id3Frames(data: DataInputStream, version: Int, flags: Int, size: Int): Values {
         var remaining = size
         if (version >= 3 && flags and 0x40 != 0) {
             require(remaining >= 4)
@@ -61,6 +98,7 @@ object AudioGenreTags {
             remaining -= 4 + extended
         }
         val values = mutableListOf<String>()
+        val artists = mutableListOf<String>()
         val header = ByteArray(if (version == 2) 6 else 10)
         while (remaining >= header.size) {
             data.readFully(header)
@@ -75,7 +113,7 @@ object AudioGenreTags {
                 else -> sync(header, 4)
             }
             require(length > 0 && length <= remaining)
-            if (id == "TCON" || id == "TCO") {
+            if (id in setOf("TCON", "TCO", "TPE1", "TP1")) {
                 val format = if (version == 2) 0 else header[9].toInt() and 255
                 val unsupported = if (version == 3) format and 0xc0 else format and 0x0c
                 if (unsupported == 0) {
@@ -92,16 +130,17 @@ object AudioGenreTags {
                             else -> error("Unknown text encoding")
                         }
                         val text = String(payload, start + 1, payload.size - start - 1, encoding)
-                        Genres.split(text).forEach { value -> values += id3Genres(value) }
+                        if (id == "TPE1" || id == "TP1") artists += Artists.split(text)
+                        else Genres.split(text).forEach { value -> values += id3Genres(value) }
                     }
                 } else skipFully(data, length)
             } else skipFully(data, length)
             remaining -= length
         }
-        return Genres.split(values.joinToString(";"))
+        return Values(Artists.split(artists.joinToString(";")), Genres.split(values.joinToString(";")))
     }
 
-    private fun flac(data: DataInputStream): List<String> {
+    private fun flac(data: DataInputStream): Values {
         var consumed = 0
         while (consumed < MAX_TAG) {
             val type = data.readUnsignedByte()
@@ -112,10 +151,10 @@ object AudioGenreTags {
             skipFully(data, size)
             if (type and 0x80 != 0) break
         }
-        return emptyList()
+        return Values()
     }
 
-    private fun ogg(data: DataInputStream): List<String> {
+    private fun ogg(data: DataInputStream): Values {
         val packet = ByteArrayOutputStream()
         var consumed = 0
         var serial: Int? = null
@@ -139,16 +178,16 @@ object AudioGenreTags {
                     if (bytes.size >= 8 && String(bytes, 0, 8, Charsets.US_ASCII) == "OpusTags") return comments(bytes.copyOfRange(8, bytes.size))
                     val identification = (bytes.size >= 7 && bytes[0] == 1.toByte() && String(bytes, 1, 6, Charsets.US_ASCII) == "vorbis") ||
                         (bytes.size >= 8 && String(bytes, 0, 8, Charsets.US_ASCII) == "OpusHead")
-                    if (!identification) return emptyList()
+                    if (!identification) return Values()
                     packet.reset()
                 }
             }
             require(String(ByteArray(4).also(data::readFully), Charsets.US_ASCII) == "OggS")
         }
-        return emptyList()
+        return Values()
     }
 
-    private fun comments(bytes: ByteArray): List<String> {
+    private fun comments(bytes: ByteArray): Values {
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         fun string(): String {
             val size = buffer.int
@@ -159,11 +198,13 @@ object AudioGenreTags {
         val count = buffer.int
         require(count in 0..(buffer.remaining() / 4))
         val values = mutableListOf<String>()
+        val artists = mutableListOf<String>()
         repeat(count) {
             val comment = string()
             if (comment.substringBefore('=').equals("GENRE", true) && '=' in comment) values += comment.substringAfter('=')
+            if (comment.substringBefore('=').equals("ARTIST", true) && '=' in comment) artists += comment.substringAfter('=')
         }
-        return Genres.split(values.joinToString(";"))
+        return Values(Artists.split(artists.joinToString(";")), Genres.split(values.joinToString(";")))
     }
 
     private fun unsync(bytes: ByteArray): ByteArray {
