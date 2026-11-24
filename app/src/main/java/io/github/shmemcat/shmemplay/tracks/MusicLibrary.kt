@@ -23,6 +23,8 @@ data class LibraryTrack(
     val genre: String,
     val durationMs: Long,
     val albumId: Long?,
+    val trackNumber: Int? = null,
+    val discNumber: Int? = null,
 ) {
     val genres: List<String> get() = Genres.split(genre)
     val artists: List<String> get() = Artists.split(artist)
@@ -94,6 +96,11 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                             ?.let { if (it.isEmpty()) null else "$it/" }
                     }
                     val displayName = cursor.string(MediaStore.MediaColumns.DISPLAY_NAME).orEmpty()
+                    // MediaStore packs the disc into the thousands of TRACK on older Android versions.
+                    val albumPosition = cursor.long(MediaStore.Audio.AudioColumns.TRACK)?.toInt()?.takeIf { it > 0 }
+                    val discNumber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        cursor.long(MediaStore.Audio.AudioColumns.DISC_NUMBER)?.toInt()?.takeIf { it > 0 }
+                    } else null
                     val embedded = readTags(ContentUris.withAppendedId(collection, id), displayName)
                     val artist = Artists.join(Artists.credits(embedded.artists.ifEmpty {
                         Artists.split(cursor.string(MediaStore.Audio.AudioColumns.ARTIST).orEmpty())
@@ -115,6 +122,8 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
                             genre = genre,
                             durationMs = cursor.long(MediaStore.Audio.AudioColumns.DURATION) ?: 0L,
                             albumId = cursor.long(MediaStore.Audio.AudioColumns.ALBUM_ID),
+                            trackNumber = albumPosition?.rem(1000)?.takeIf { it > 0 },
+                            discNumber = discNumber ?: albumPosition?.div(1000)?.takeIf { it > 0 },
                         ),
                     )
                 }
@@ -178,6 +187,8 @@ class MediaStoreMusicLibraryRepository(private val context: Context) : MusicLibr
         add(MediaStore.Audio.AudioColumns.ALBUM)
         add(MediaStore.Audio.AudioColumns.DURATION)
         add(MediaStore.Audio.AudioColumns.ALBUM_ID)
+        add(MediaStore.Audio.AudioColumns.TRACK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(MediaStore.Audio.AudioColumns.DISC_NUMBER)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(MediaStore.Audio.AudioColumns.GENRE)
     }.toTypedArray()
 

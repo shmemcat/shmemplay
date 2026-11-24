@@ -163,21 +163,67 @@ class BrowserSearchTest {
         assertTrue(searchBrowser(request.copy(playlists = BrowserPlaylistIndex(listOf(broken)))).entries.isEmpty())
     }
 
+    @Test fun albumDefaultOrderUsesDiscAndTrackNumbersAndSearchPreservesThatOrder() {
+        val discTwo = track(1, "Alpha").copy(trackNumber = 1, discNumber = 2)
+        val second = track(2, "Beta").copy(trackNumber = 2, discNumber = 1)
+        val first = track(3, "Zulu").copy(trackNumber = 1)
+        val missing = track(4, "Missing")
+        val duplicateNumber = track(5, "Equal position").copy(trackNumber = 2)
+        val source = listOf(discTwo, missing, second, first, duplicateNumber)
+        val base = BrowserSearchRequest(BrowserLibraryIndex.indexed(source), null, null,
+            BrowserSection.ALBUMS, BrowserDetail(DetailKind.ALBUM, "Album"), "", "All")
+        val expected = listOf(first, second, duplicateNumber, discTwo, missing)
+
+        assertEquals(expected, searchBrowser(base).tracks)
+        assertEquals(expected, searchBrowser(base.copy(query = "Artist")).tracks)
+        assertEquals(listOf(second), searchBrowser(base.copy(query = "Beta")).tracks)
+        assertEquals(expected, searchBrowser(base.copy(detail = null)).groups.single().second)
+        assertEquals(source, searchBrowser(base.copy(section = BrowserSection.SONGS, detail = null)).tracks)
+        val artist = base.copy(section = BrowserSection.ARTISTS, detail = BrowserDetail(DetailKind.ARTIST, "Artist"))
+        assertEquals(source, searchBrowser(artist.copy(trackSort = TrackSort.SONG_DESC)).tracks)
+    }
+
+    @Test fun albumDetailSupportsSortChoicesAndRestoresSourceOrderWithoutTrackNumbers() {
+        val beta = track(1, "Beta", artist = "Artist B")
+        val alpha = track(2, "alpha", artist = "Artist C")
+        val gamma = track(3, "Gamma", artist = "Artist A")
+        val source = listOf(beta, alpha, gamma)
+        val library = BrowserLibraryIndex.indexed(source)
+        val base = BrowserSearchRequest(library, null, null,
+            BrowserSection.ALBUMS, BrowserDetail(DetailKind.ALBUM, "Album"), "", "All")
+        val expected = mapOf(
+            TrackSort.DEFAULT to source,
+            TrackSort.SONG_ASC to listOf(alpha, beta, gamma),
+            TrackSort.SONG_DESC to listOf(gamma, beta, alpha),
+            TrackSort.ARTIST_ASC to listOf(gamma, beta, alpha),
+            TrackSort.ARTIST_DESC to listOf(alpha, beta, gamma),
+            TrackSort.ALBUM_ASC to listOf(alpha, beta, gamma),
+            TrackSort.ALBUM_DESC to listOf(gamma, beta, alpha),
+        )
+        expected.forEach { (sort, songs) ->
+            val result = searchBrowser(base.copy(trackSort = sort))
+            assertEquals(sort.name, songs, result.tracks)
+            assertEquals(songs.map(LibraryTrack::stableId), result.trackIds)
+        }
+        assertEquals(source, searchBrowser(base).tracks)
+        assertEquals(source, library.tracks)
+    }
+
     @Test fun playlistDetailSupportsEveryRequestedMetadataSortWithoutChangingTheDefaultOrder() {
         val beta = track(1, "Beta", album = "Album C", artist = "Artist B")
         val alpha = track(2, "alpha", album = "Album A", artist = "Artist C")
         val gamma = track(3, "Gamma", album = "Album B", artist = "Artist A")
         val mix = playlist("Mix.m3u", listOf(beta, alpha, gamma).map { PlaylistEntry("Music/${it.displayName}", it) })
         val base = request(BrowserSection.PLAYLISTS, "", BrowserDetail(DetailKind.PLAYLIST, mix.document.uri.toString()), listOf(mix))
-        fun titles(sort: PlaylistSort) = searchBrowser(base.copy(playlistSort = sort)).tracks.map(LibraryTrack::title)
+        fun titles(sort: TrackSort) = searchBrowser(base.copy(trackSort = sort)).tracks.map(LibraryTrack::title)
 
-        assertEquals(listOf("Beta", "alpha", "Gamma"), titles(PlaylistSort.DEFAULT))
-        assertEquals(listOf("alpha", "Beta", "Gamma"), titles(PlaylistSort.SONG_ASC))
-        assertEquals(listOf("Gamma", "Beta", "alpha"), titles(PlaylistSort.SONG_DESC))
-        assertEquals(listOf("Gamma", "Beta", "alpha"), titles(PlaylistSort.ARTIST_ASC))
-        assertEquals(listOf("alpha", "Beta", "Gamma"), titles(PlaylistSort.ARTIST_DESC))
-        assertEquals(listOf("alpha", "Gamma", "Beta"), titles(PlaylistSort.ALBUM_ASC))
-        assertEquals(listOf("Beta", "Gamma", "alpha"), titles(PlaylistSort.ALBUM_DESC))
+        assertEquals(listOf("Beta", "alpha", "Gamma"), titles(TrackSort.DEFAULT))
+        assertEquals(listOf("alpha", "Beta", "Gamma"), titles(TrackSort.SONG_ASC))
+        assertEquals(listOf("Gamma", "Beta", "alpha"), titles(TrackSort.SONG_DESC))
+        assertEquals(listOf("Gamma", "Beta", "alpha"), titles(TrackSort.ARTIST_ASC))
+        assertEquals(listOf("alpha", "Beta", "Gamma"), titles(TrackSort.ARTIST_DESC))
+        assertEquals(listOf("alpha", "Gamma", "Beta"), titles(TrackSort.ALBUM_ASC))
+        assertEquals(listOf("Beta", "Gamma", "alpha"), titles(TrackSort.ALBUM_DESC))
     }
 
     @Test fun queueSearchUsesSavedMetadataAndQueueOrderRatherThanLibraryOrder() {

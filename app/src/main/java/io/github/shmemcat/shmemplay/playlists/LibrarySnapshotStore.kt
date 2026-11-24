@@ -29,13 +29,15 @@ internal class LibrarySnapshotStore(context: Context) {
         runCatching {
             file.openRead().use { stream ->
                 val input = DataInputStream(stream.buffered(64 * 1024))
-                require(input.readInt() == 0x53484C31 && input.readInt() == 3)
+                require(input.readInt() == 0x53484C31 && input.readInt() == 4)
                 val tracks = List(input.count(1_000_000)) {
                     LibraryTrack(
                         MediaStoreIdentity(input.readUTF(), input.readLong()), Uri.parse(input.readUTF()),
                         input.readUTF(), input.optional(), input.readUTF(), input.readUTF(),
                         input.readUTF(), input.readUTF(), input.readLong(),
                         if (input.readBoolean()) input.readLong() else null,
+                        if (input.readBoolean()) input.readInt() else null,
+                        if (input.readBoolean()) input.readInt() else null,
                     )
                 }
                 require(input.read() == -1)
@@ -50,13 +52,15 @@ internal class LibrarySnapshotStore(context: Context) {
         val stream = file.startWrite()
         try {
             val out = DataOutputStream(stream.buffered(64 * 1024))
-            out.writeInt(0x53484C31); out.writeInt(3)
+            out.writeInt(0x53484C31); out.writeInt(4)
             out.writeInt(snapshot.tracks.size)
             snapshot.tracks.forEach { t ->
                 out.writeUTF(t.identity.volumeName); out.writeLong(t.identity.mediaId); out.writeUTF(t.contentUri.toString())
                 out.writeUTF(t.displayName); out.optional(t.relativePath); out.writeUTF(t.title); out.writeUTF(t.artist)
                 out.writeUTF(t.album); out.writeUTF(t.genre); out.writeLong(t.durationMs)
                 out.writeBoolean(t.albumId != null); t.albumId?.let(out::writeLong)
+                out.writeBoolean(t.trackNumber != null); t.trackNumber?.let(out::writeInt)
+                out.writeBoolean(t.discNumber != null); t.discNumber?.let(out::writeInt)
             }
             out.flush()
             file.finishWrite(stream)

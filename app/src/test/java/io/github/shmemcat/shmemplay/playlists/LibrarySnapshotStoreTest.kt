@@ -26,11 +26,11 @@ import java.nio.file.Files
 @Config(sdk = [28])
 @LooperMode(LooperMode.Mode.PAUSED)
 class LibrarySnapshotStoreTest {
-    @Test fun preMultiGenreCachesAreRebuilt() {
+    @Test fun cachesWithoutAlbumPositionsAreRebuilt() {
         val directory = Files.createTempDirectory("library-old-genres").toFile()
         val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
         try {
-            for (version in listOf(1, 2)) {
+            for (version in listOf(1, 2, 3)) {
                 java.io.DataOutputStream(File(directory, "library-snapshot-v1.bin").outputStream()).use {
                     it.writeInt(0x53484C31); it.writeInt(version); it.writeInt(0)
                 }
@@ -47,7 +47,7 @@ class LibrarySnapshotStoreTest {
         try {
             val store = LibrarySnapshotStore(context)
             assertNull(store.load())
-            val tracks = listOf(track(), track(2).copy(relativePath = null, albumId = null))
+            val tracks = listOf(track().copy(trackNumber = 3, discNumber = 2), track(2).copy(relativePath = null, albumId = null))
             store.save(LibrarySnapshot(tracks), store.generation)
             assertEquals(tracks, LibrarySnapshotStore(context).load()!!.tracks)
             store.save(LibrarySnapshot(emptyList()), store.generation)

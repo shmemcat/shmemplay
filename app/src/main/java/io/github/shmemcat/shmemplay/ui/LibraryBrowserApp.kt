@@ -23,6 +23,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -87,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -94,6 +97,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
@@ -156,7 +160,7 @@ fun LibraryBrowserApp(
     var sectionName by rememberSaveable { mutableStateOf(BrowserSection.NOW_PLAYING.name) }
     var detailKind by rememberSaveable { mutableStateOf<String?>(null) }
     var detailKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var playlistSortName by rememberSaveable(detailKey) { mutableStateOf(PlaylistSort.DEFAULT.name) }
+    var trackSortName by rememberSaveable(detailKind, detailKey) { mutableStateOf(TrackSort.DEFAULT.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var queueQuery by rememberSaveable { mutableStateOf("") }
     var selectedIds by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -188,7 +192,7 @@ fun LibraryBrowserApp(
     val section = BrowserSection.valueOf(sectionName)
     val playerSection = section == BrowserSection.QUEUES || section == BrowserSection.NOW_PLAYING
     val detail = detailKind?.let { kind -> detailKey?.let { BrowserDetail(DetailKind.valueOf(kind), it) } }
-    val playlistSort = PlaylistSort.valueOf(playlistSortName)
+    val trackSort = TrackSort.valueOf(trackSortName)
     val songsScrollState = rememberLazyListState()
     val albumsScrollState = rememberLazyListState()
     val artistsScrollState = rememberLazyListState()
@@ -250,7 +254,7 @@ fun LibraryBrowserApp(
     val request = BrowserSearchRequest(
         libraryIndex?.takeIf { !playerSection && it.tracks === tracks },
         playlistIndex?.takeIf { (section == BrowserSection.PLAYLISTS || detail?.kind == DetailKind.PLAYLIST) && it.snapshots === playlists },
-        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.matchesContent(queueContent) }, section, detail, sourceQuery, playlistFilter, playlistSort,
+        queueIndex?.takeIf { section == BrowserSection.QUEUES && it.matchesContent(queueContent) }, section, detail, sourceQuery, playlistFilter, trackSort,
     )
     val searchResult by produceState<Pair<BrowserSearchRequest, BrowserProjection>?>(null, request) {
         value = withContext(Dispatchers.Default) {
@@ -306,7 +310,7 @@ fun LibraryBrowserApp(
         val available = tracks.mapTo(hashSetOf(), LibraryTrack::stableId)
         selectedIds = selectedIds.filter { it in available || it in queueTracksById }
     }
-    LaunchedEffect(query, playlistSort) {
+    LaunchedEffect(query, trackSort) {
         songsScrollState.scrollToItem(0)
         albumsScrollState.scrollToItem(0)
         artistsScrollState.scrollToItem(0)
@@ -391,11 +395,13 @@ fun LibraryBrowserApp(
                     },
                     showRules = section == BrowserSection.PLAYLISTS && detail == null,
                     onNewPlaylist = { showNewPlaylist = true },
+                    albumSort = trackSort.takeIf { detail?.kind == DetailKind.ALBUM },
+                    onSort = { trackSortName = it.name },
                 )
                 if (openPlaylist != null) PlaylistActionBar(
                     playlist = openPlaylist,
-                    sort = playlistSort,
-                    onSort = { playlistSortName = it.name },
+                    sort = trackSort,
+                    onSort = { trackSortName = it.name },
                     menuExpanded = playlistMenuExpanded,
                     onMenuExpanded = { playlistMenuExpanded = it },
                     canPlay = canPlayPlaylist,
@@ -630,6 +636,8 @@ private fun BrowserTopBar(
     showRules: Boolean,
     onRules: () -> Unit,
     onNewPlaylist: () -> Unit,
+    albumSort: TrackSort?,
+    onSort: (TrackSort) -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Row(
@@ -660,6 +668,7 @@ private fun BrowserTopBar(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (albumSort != null) TrackSortButton("album", albumSort, onSort)
                 if (showRules) {
                     var creationMenu by remember { mutableStateOf(false) }
                     Box {
@@ -742,10 +751,30 @@ private fun QueueSearchPlaybackButton(
 }
 
 @Composable
+private fun TrackSortButton(label: String, sort: TrackSort, onSort: (TrackSort) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        PlayerButton(R.drawable.ic_arrow_down_wide_narrow, "Sort $label: ${sort.label}") { expanded = true }
+        DropdownMenu(expanded, { expanded = false }) {
+            TrackSort.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    trailingIcon = { if (sort == option) Text("✓") },
+                    onClick = {
+                        expanded = false
+                        onSort(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun PlaylistActionBar(
     playlist: PlaylistSnapshot,
-    sort: PlaylistSort,
-    onSort: (PlaylistSort) -> Unit,
+    sort: TrackSort,
+    onSort: (TrackSort) -> Unit,
     menuExpanded: Boolean,
     onMenuExpanded: (Boolean) -> Unit,
     canPlay: Boolean,
@@ -756,7 +785,6 @@ private fun PlaylistActionBar(
     onDelete: () -> Unit,
     onSelectAll: () -> Unit,
 ) {
-    var sortMenuExpanded by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxWidth().semantics { testTag = "playlist-action-bar" }) {
             Row(
@@ -764,21 +792,7 @@ private fun PlaylistActionBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Box {
-                    PlayerButton(R.drawable.ic_arrow_down_wide_narrow, "Sort playlist: ${sort.label}") { sortMenuExpanded = true }
-                    DropdownMenu(sortMenuExpanded, { sortMenuExpanded = false }) {
-                        PlaylistSort.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.label) },
-                                trailingIcon = { if (sort == option) Text("✓") },
-                                onClick = {
-                                    sortMenuExpanded = false
-                                    onSort(option)
-                                },
-                            )
-                        }
-                    }
-                }
+                TrackSortButton("playlist", sort, onSort)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     PlayerButton(R.drawable.ic_play, "Play playlist in order", canPlay, onPlay)
                     PlayerButton(R.drawable.ic_shuffle, "Shuffle playlist", canPlay, onShuffle)
@@ -1447,12 +1461,26 @@ private fun SelectionActionLabel(glyph: String, label: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SearchBar(query: String, onQueryChange: (String) -> Unit, onClear: () -> Unit) {
+    val focusManager = LocalFocusManager.current
+    val keyboardVisible = WindowInsets.isImeVisible
+    var keyboardWasVisible by remember { mutableStateOf(keyboardVisible) }
+    var isFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(keyboardVisible) {
+        if (keyboardWasVisible && !keyboardVisible && isFocused) {
+            focusManager.clearFocus()
+        }
+        keyboardWasVisible = keyboardVisible
+    }
+
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+            .onFocusChanged { isFocused = it.isFocused },
         placeholder = { Text("Search in this list…") },
         leadingIcon = { PlayerIcon(R.drawable.ic_search, "Search") },
         trailingIcon = { if (query.isNotEmpty()) PlayerButton(R.drawable.ic_x, "Clear search", action = onClear) },

@@ -64,6 +64,41 @@ class PlayerPolishTest {
         }
     }
 
+    @Test fun albumSortStartsInDefaultOrderAndResetsWhenReopened() {
+        val alpha = track.copy(title = "Alpha", trackNumber = 2)
+        val zulu = track.copy(identity = MediaStoreIdentity("external_primary", 99999998), title = "Zulu", trackNumber = 1)
+        compose.setContent {
+            MaterialTheme { LibraryBrowserApp(LibraryBrowserState(
+                allTracks = listOf(alpha, zulu), includedFolderRoots = setOf("Music"),
+            ), LibraryBrowserActions()) }
+        }
+        fun waitForSongs() = compose.waitUntil(10000) {
+            compose.onAllNodesWithText("Zulu").fetchSemanticsNodes().isNotEmpty()
+        }
+        fun assertBefore(first: String, second: String) {
+            waitForSongs()
+            assertTrue(compose.onNodeWithText(first).fetchSemanticsNode().boundsInRoot.top <
+                compose.onNodeWithText(second).fetchSemanticsNode().boundsInRoot.top)
+        }
+        compose.onNodeWithContentDescription("Albums").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Fixture album").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Fixture album").performClick()
+        assertBefore("Zulu", "Alpha")
+        compose.onNodeWithContentDescription("Sort album: Default order").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Song A–Z").performClick()
+        assertBefore("Alpha", "Zulu")
+        compose.onNodeWithContentDescription("Sort album: Song A–Z").performClick()
+        compose.onNodeWithText("Default order").performClick()
+        assertBefore("Zulu", "Alpha")
+        compose.onNodeWithContentDescription("Sort album: Default order").performClick()
+        compose.onNodeWithText("Song Z–A").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Fixture album").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Fixture album").performClick()
+        compose.onNodeWithContentDescription("Sort album: Default order").assertIsDisplayed()
+        assertBefore("Zulu", "Alpha")
+    }
+
     @Test fun plusMenuCreatesAnEmptyPlaylistAfterNamePrompt() {
         var createdName: String? = null
         var createdTracks: List<LibraryTrack>? = null
